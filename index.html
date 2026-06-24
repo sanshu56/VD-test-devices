@@ -117,6 +117,39 @@
           <div id="device-notes-box" class="p-3 bg-amber-50 rounded-xl text-xs text-amber-700 hidden">
             <strong>备注提示：</strong> <span id="device-notes"></span>
           </div>
+
+          <!-- 新增：生成标签按钮 -->
+          <div class="pt-2 border-t border-slate-50">
+            <button onclick="toggleLabelGenerator()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition">
+              🏷️ 生成/打印该设备二维码贴纸
+            </button>
+          </div>
+        </div>
+
+        <!-- 新增：标签贴纸预览区域 -->
+        <div id="label-generator-box" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
+          <div class="flex justify-between items-center">
+            <h3 class="text-sm font-bold text-slate-700">设备贴纸预览 (可直接截图或打印)</h3>
+            <button onclick="toggleLabelGenerator()" class="text-xs text-slate-400">收起</button>
+          </div>
+          
+          <!-- 贴纸实体 (精心设计，适合打印成 70mm * 50mm 左右的标签纸) -->
+          <div class="border-2 border-dashed border-slate-300 p-4 rounded-xl bg-white flex gap-4 items-center max-w-sm mx-auto shadow-inner">
+            <!-- 二维码 -->
+            <div class="flex-shrink-0 bg-white p-1 border border-slate-100 rounded-lg">
+              <img id="label-qr-image" src="" alt="设备二维码" class="w-24 h-24">
+            </div>
+            <!-- 文字信息 -->
+            <div class="flex-grow space-y-1 text-xs">
+              <p class="font-black text-sm text-slate-900 leading-tight" id="label-device-name">设备名称</p>
+              <p class="font-mono font-bold text-blue-600" id="label-device-id">ID: -</p>
+              <div class="text-[10px] text-slate-500 space-y-0.5 border-t border-slate-100 pt-1">
+                <p>保管人: <span class="font-semibold text-slate-700" id="label-device-owner">-</span></p>
+                <p>位置: <span class="font-semibold text-slate-700" id="label-device-location">-</span></p>
+              </div>
+              <p class="text-[8px] text-slate-400 pt-1 border-t border-slate-50 text-center">微信扫码一键借还</p>
+            </div>
+          </div>
         </div>
 
         <!-- 借用表单 (未借出时显示) -->
@@ -165,11 +198,10 @@
 
   <!-- ================= 核心 JavaScript 逻辑 ================= -->
   <script>
-    // 1. 填入你的 Supabase 配置 (已为你做防错和自动裁剪处理)
+    // 1. 填入你的 Supabase 配置
     let SUPABASE_URL = "https://sslqnzfezflbtccwstkd.supabase.co/rest/v1/";
     const SUPABASE_KEY = "sb_publishable_HoPbeml9qwno-0k0EgBBEQ_epNishVC";
 
-    // 自动兼容：如果用户填写的 URL 带有 /rest/v1/，自动将其裁剪掉
     if (SUPABASE_URL.endsWith('/rest/v1/')) {
       SUPABASE_URL = SUPABASE_URL.replace('/rest/v1/', '');
     } else if (SUPABASE_URL.endsWith('/rest/v1')) {
@@ -180,21 +212,18 @@
     let currentDevice = null;
     let html5QrScanner = null;
 
-    // 2. 初始化检测
     try {
       if (!window.supabase) {
-        alert("🚨 依赖库加载失败！\n原因：你的网络或公司内网防火墙拦截了 cdn.jsdelivr.net 域名。\n\n解决方法：请尝试断开公司内网 VPN，切换到手机热点，然后刷新本页面。");
+        alert("🚨 依赖库加载失败！");
       } else {
-        // 使用重命名后的 supabaseClient，避免与全局 window.supabase 产生 let 重复声明的 SyntaxError
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
       }
     } catch (e) {
       alert("初始化 Supabase 客户端出错: " + e.message);
     }
 
-    // 3. 页面加载完成后的生命周期
+    // 2. 页面加载
     window.addEventListener('DOMContentLoaded', () => {
-      // 检查 URL 里有没有带 ?id=xxx 参数
       const urlParams = new URLSearchParams(window.location.search);
       const deviceId = urlParams.get('id');
       
@@ -205,7 +234,7 @@
       }
     });
 
-    // 4. 路由控制：回到首页
+    // 3. 回到首页
     function goHome() {
       window.history.replaceState({}, document.title, window.location.pathname);
       document.getElementById('view-home').classList.remove('hidden');
@@ -215,10 +244,10 @@
       loadRecentLogs();
     }
 
-    // 5. 路由控制：展示详情页
+    // 4. 展示详情页
     async function showDetail(deviceId) {
       if (!supabaseClient) {
-        alert("数据库未连接，无法查询！请检查网络或配置。");
+        alert("数据库未连接！");
         return;
       }
 
@@ -228,24 +257,19 @@
       
       document.getElementById('detail-loading').classList.remove('hidden');
       document.getElementById('detail-content').classList.add('hidden');
+      document.getElementById('label-generator-box').classList.add('hidden'); // 默认隐藏标签生成器
       
       stopScanner();
       
       try {
-        // 从 Supabase 查询设备信息
         const { data, error } = await supabaseClient
           .from('devices')
           .select('*')
           .eq('device_id', deviceId)
           .single();
           
-        if (error) {
-          throw new Error(error.message);
-        }
-
-        if (!data) {
-          throw new Error("数据库中未找到该设备，请确认 ID 是否存在于 devices 表中。");
-        }
+        if (error) throw new Error(error.message);
+        if (!data) throw new Error("数据库中未找到该设备。");
         
         currentDevice = data;
         renderDeviceDetail();
@@ -255,7 +279,7 @@
       }
     }
 
-    // 6. 渲染设备详情
+    // 5. 渲染设备详情
     function renderDeviceDetail() {
       document.getElementById('detail-loading').classList.add('hidden');
       document.getElementById('detail-content').classList.remove('hidden');
@@ -299,7 +323,30 @@
       }
     }
 
-    // 7. 提交借出登记
+    // 🌟 新增：切换显示二维码贴纸生成器
+    function toggleLabelGenerator() {
+      const box = document.getElementById('label-generator-box');
+      if (box.classList.contains('hidden')) {
+        // 渲染贴纸内容
+        document.getElementById('label-device-name').innerText = currentDevice.name;
+        document.getElementById('label-device-id').innerText = "ID: " + currentDevice.device_id;
+        document.getElementById('label-device-owner').innerText = currentDevice.owner || "暂无";
+        document.getElementById('label-device-location').innerText = currentDevice.location || "暂无";
+        
+        // 动态生成二维码图片（指向你当前的 GitHub Pages 链接）
+        const targetUrl = `https://sanshu56.github.io/VD-test-devices/?id=${currentDevice.device_id}`;
+        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(targetUrl)}`;
+        document.getElementById('label-qr-image').src = qrApiUrl;
+
+        box.classList.remove('hidden');
+        // 滚动到贴纸视图
+        box.scrollIntoView({ behavior: 'smooth' });
+      } else {
+        box.classList.add('hidden');
+      }
+    }
+
+    // 6. 提交借出登记
     async function submitBorrow() {
       const borrowerName = document.getElementById('borrower-name').value.trim();
       const expectedReturnDate = document.getElementById('expected-return-date').value;
@@ -340,7 +387,7 @@
       }
     }
 
-    // 8. 提交归还登记
+    // 7. 提交归还登记
     async function submitReturn() {
       const formerBorrower = currentDevice.current_borrower;
 
@@ -371,7 +418,7 @@
       }
     }
 
-    // 9. 加载最近 5 条日志
+    // 8. 加载最近 5 条日志
     async function loadRecentLogs() {
       const container = document.getElementById('recent-logs');
       if (!supabaseClient) return;
@@ -414,7 +461,7 @@
       }
     }
 
-    // 10. 开启摄像头扫码
+    // 9. 开启摄像头扫码
     function startScanner() {
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.remove('hidden');
@@ -452,7 +499,7 @@
       });
     }
 
-    // 11. 关闭摄像头
+    // 10. 关闭摄像头
     function stopScanner() {
       if (html5QrScanner) {
         html5QrScanner.stop().then(() => {
@@ -461,7 +508,7 @@
       }
     }
 
-    // 12. 手动查询 ID
+    // 11. 手动查询 ID
     function searchManualId() {
       const id = document.getElementById('manual-id-input').value.trim();
       if (!id) {
