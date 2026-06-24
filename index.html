@@ -176,7 +176,7 @@
       SUPABASE_URL = SUPABASE_URL.replace('/rest/v1', '');
     }
 
-    let supabase = null;
+    let supabaseClient = null;
     let currentDevice = null;
     let html5QrScanner = null;
 
@@ -185,7 +185,8 @@
       if (!window.supabase) {
         alert("🚨 依赖库加载失败！\n原因：你的网络或公司内网防火墙拦截了 cdn.jsdelivr.net 域名。\n\n解决方法：请尝试断开公司内网 VPN，切换到手机热点，然后刷新本页面。");
       } else {
-        supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+        // 使用重命名后的 supabaseClient，避免与全局 window.supabase 产生 let 重复声明的 SyntaxError
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
       }
     } catch (e) {
       alert("初始化 Supabase 客户端出错: " + e.message);
@@ -216,7 +217,7 @@
 
     // 5. 路由控制：展示详情页
     async function showDetail(deviceId) {
-      if (!supabase) {
+      if (!supabaseClient) {
         alert("数据库未连接，无法查询！请检查网络或配置。");
         return;
       }
@@ -232,7 +233,7 @@
       
       try {
         // 从 Supabase 查询设备信息
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
           .from('devices')
           .select('*')
           .eq('device_id', deviceId)
@@ -249,7 +250,7 @@
         currentDevice = data;
         renderDeviceDetail();
       } catch (err) {
-        alert("❌ 查询设备失败！\n\n具体错误信息：\n" + err.message + "\n\n(如果是 Network Error，通常是因为本地双击打开被浏览器安全策略拦截，或公司内网限制。请尝试部署到 GitHub Pages 后用手机访问测试。)");
+        alert("❌ 查询设备失败！\n\n具体错误信息：\n" + err.message);
         goHome();
       }
     }
@@ -311,7 +312,7 @@
       const borrowTime = new Date().toISOString();
 
       try {
-        const { error: devError } = await supabase
+        const { error: devError } = await supabaseClient
           .from('devices')
           .update({
             current_borrower: borrowerName,
@@ -322,7 +323,7 @@
 
         if (devError) throw devError;
 
-        await supabase
+        await supabaseClient
           .from('borrow_logs')
           .insert({
             device_id: currentDevice.device_id,
@@ -344,7 +345,7 @@
       const formerBorrower = currentDevice.current_borrower;
 
       try {
-        const { error: devError } = await supabase
+        const { error: devError } = await supabaseClient
           .from('devices')
           .update({
             current_borrower: null,
@@ -355,7 +356,7 @@
 
         if (devError) throw devError;
 
-        await supabase
+        await supabaseClient
           .from('borrow_logs')
           .insert({
             device_id: currentDevice.device_id,
@@ -373,10 +374,10 @@
     // 9. 加载最近 5 条日志
     async function loadRecentLogs() {
       const container = document.getElementById('recent-logs');
-      if (!supabase) return;
+      if (!supabaseClient) return;
       
       try {
-        const { data, error } = await supabase
+        const { data, error } = await supabaseClient
           .from('borrow_logs')
           .select('*, devices(name)')
           .order('action_time', { ascending: false })
