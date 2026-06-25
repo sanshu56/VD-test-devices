@@ -4,12 +4,6 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>VD 设备标签批量打印面板</title>
-  <!-- 引入 Tailwind CSS -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Supabase JS SDK -->
-  <script src="https://npm.elemecdn.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!-- 引入纯 JS 本地二维码生成库 -->
-  <script src="https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
   <style>
     /* 打印专用 CSS 优化 */
     @media print {
@@ -26,9 +20,17 @@
         box-shadow: none !important;
       }
     }
+    .hidden { display: none !important; }
   </style>
 </head>
 <body class="bg-slate-100 min-h-screen text-slate-800 p-6">
+
+  <!-- ================= 🌟 全局依赖加载遮罩层 ================= -->
+  <div id="global-loading" class="fixed inset-0 bg-slate-50 flex flex-col items-center justify-center z-[9999] p-6 text-center">
+    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+    <h3 class="text-md font-bold text-slate-700">正在安全加载打印系统依赖库...</h3>
+    <p class="text-xs text-slate-400 mt-2">首次加载约需 2-4 秒，系统正在智能调配最快的 CDN 节点，请稍候</p>
+  </div>
 
   <!-- 顶部控制面板 (打印时自动隐藏) -->
   <header class="no-print max-w-5xl mx-auto bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mb-8 space-y-4">
@@ -102,39 +104,127 @@
     let supabaseClient = null;
     let allDevices = [];
 
-    // 2. 页面加载
+    // 智能 CDN 自动避让与重试加载函数
+    function loadScriptPromise(urls) {
+      return new Promise((resolve) => {
+        let index = 0;
+        function tryLoad() {
+          if (index >= urls.length) {
+            resolve(false);
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = urls[index];
+          script.onload = () => resolve(true);
+          script.onerror = () => {
+            console.warn(`CDN 节点失效，正在自动尝试备用节点: ${urls[index]}`);
+            index++;
+            tryLoad();
+          };
+          document.head.appendChild(script);
+        }
+        tryLoad();
+      });
+    }
+
+    // 并行智能加载所有依赖库
+    async function initDependencies() {
+      const supabaseUrls = [
+        "https://gcore.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js",
+        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js",
+        "https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js",
+        "https://unpkg.zhimg.com/@supabase/supabase-js@2/dist/umd/supabase.js"
+      ];
+      const qrcodeUrls = [
+        "https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",
+        "https://gcore.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js",
+        "https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
+      ];
+      const tailwindUrls = [
+        "https://cdn.tailwindcss.com"
+      ];
+
+      const [sbOk, qrOk, twOk] = await Promise.all([
+        loadScriptPromise(supabaseUrls),
+        loadScriptPromise(qrcodeUrls),
+        loadScriptPromise(tailwindUrls)
+      ]);
+
+      return { sbOk, qrOk };
+    }
+
+    function showGlobalLoading(show) {
+      const loader = document.getElementById('global-loading');
+      if (loader) {
+        if (show) loader.classList.remove('hidden');
+        else loader.classList.add('hidden');
+      }
+    }
+
+    function showFatalError(msg) {
+      const loader = document.getElementById('global-loading');
+      if (loader) {
+        loader.innerHTML = `
+          <div class="max-w-md p-6 bg-white rounded-2xl shadow-lg border border-rose-100 text-center space-y-4 mx-4">
+            <div class="text-rose-500 text-5xl">❌</div>
+            <h3 class="text-lg font-bold text-slate-800">系统启动失败</h3>
+            <p class="text-xs text-slate-500 text-left leading-relaxed whitespace-pre-wrap">${msg}</p>
+            <button onclick="window.location.reload()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl transition text-sm">
+              🔄 重新加载网页
+            </button>
+          </div>
+        `;
+      }
+    }
+
+    // 页面加载
     window.addEventListener('DOMContentLoaded', async () => {
-      if (!window.supabase) {
-        alert("依赖库加载失败，请检查网络！");
+      showGlobalLoading(true);
+      const { sbOk, qrOk } = await initDependencies();
+
+      if (!sbOk || !qrOk || !window.supabase) {
+        showFatalError(
+          "🚨 依赖库加载失败！\n\n" +
+          "原因：由于公司内网防火墙拦截，系统无法加载外网数据库 SDK 或二维码生成库。\n\n" +
+          "💡 解决方法：\n" +
+          "1. 请尝试断开公司内网 VPN，切换到手机移动数据或普通宽带网络。\n" +
+          "2. 刷新此网页即可秒开进入。"
+        );
         return;
       }
-      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+      try {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      } catch (e) {
+        showFatalError("初始化 Supabase 客户端出错: " + e.message);
+        return;
+      }
+
+      showGlobalLoading(false);
       await fetchAllDevices();
     });
 
-    // 3. 从数据库获取所有设备
+    // 从数据库获取所有设备
     async function fetchAllDevices() {
       try {
         const { data, error } = await supabaseClient
           .from('devices')
           .select('*')
-          .order('device_id', { ascending: true }); // 按 ID 升序排列
+          .order('device_id', { ascending: true });
 
         if (error) throw error;
         
         allDevices = data || [];
         document.getElementById('loading-state').classList.add('hidden');
         
-        // 初始化筛选下拉菜单
         initFilters();
-        // 渲染标签
         renderLabels(allDevices);
       } catch (err) {
         alert("获取设备列表失败: " + err.message);
       }
     }
 
-    // 4. 初始化筛选框
+    // 初始化筛选框
     function initFilters() {
       const categories = new Set();
       const owners = new Set();
@@ -153,6 +243,8 @@
 
     function populateSelect(elementId, set) {
       const select = document.getElementById(elementId);
+      // 清空除“全部”外的其他选项
+      select.innerHTML = '<option value="ALL">全部</option>';
       Array.from(set).sort().forEach(val => {
         const opt = document.createElement('option');
         opt.value = val;
@@ -161,7 +253,7 @@
       });
     }
 
-    // 5. 过滤并重新渲染
+    // 过滤并重新渲染
     function filterDevices() {
       const cat = document.getElementById('filter-category').value;
       const owner = document.getElementById('filter-owner').value;
@@ -177,7 +269,7 @@
       renderLabels(filtered);
     }
 
-    // 6. 渲染所有标签卡片
+    // 渲染所有标签卡片
     function renderLabels(devicesList) {
       const container = document.getElementById('labels-grid');
       container.innerHTML = "";
@@ -189,15 +281,12 @@
         return;
       }
 
-      // 循环生成卡片 HTML
       devicesList.forEach(dev => {
         const cardId = `qr-card-${dev.device_id}`;
         const qrContainerId = `qr-container-${dev.device_id}`;
         
-        // 创建一个卡片容器
         const card = document.createElement('div');
         card.id = cardId;
-        // 精心设计的标准标签纸尺寸比例 (适合 70mm * 50mm 标签)
         card.className = "label-card bg-white border border-slate-200 rounded-xl p-4 flex gap-4 items-center shadow-sm max-w-sm mx-auto";
         
         card.innerHTML = `
@@ -219,7 +308,6 @@
 
         container.appendChild(card);
 
-        // 异步在卡片内绘制二维码 (指向微信扫码直达链接)
         const targetUrl = `https://sanshu56.github.io/VD-test-devices/?id=${dev.device_id}`;
         new QRCode(document.getElementById(qrContainerId), {
           text: targetUrl,
