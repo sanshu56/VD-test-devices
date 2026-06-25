@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>VD 设备标签批量打印面板</title>
+  <!-- 引入 Tailwind CSS -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- 引入 Supabase JS SDK -->
+  <script src="https://npm.elemecdn.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- 引入纯 JS 本地二维码生成库 -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <style>
+    /* 打印专用 CSS 优化 */
+    @media print {
+      .no-print {
+        display: none !important;
+      }
+      body {
+        background-color: #ffffff !important;
+      }
+      .label-card {
+        break-inside: avoid;
+        page-break-inside: avoid;
+        border: 1px solid #cbd5e1 !important; /* 打印时保留轻微边框，便于裁剪 */
+        box-shadow: none !important;
+      }
+    }
+  </style>
+</head>
+<body class="bg-slate-100 min-h-screen text-slate-800 p-6">
+
+  <!-- 顶部控制面板 (打印时自动隐藏) -->
+  <header class="no-print max-w-5xl mx-auto bg-white rounded-2xl p-6 shadow-sm border border-slate-200 mb-8 space-y-4">
+    <div class="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      <div>
+        <h1 class="text-xl font-black text-slate-800 flex items-center gap-2">
+          <span>🖨️</span> VD 设备标签批量打印面板
+        </h1>
+        <p class="text-xs text-slate-400 mt-1">
+          系统会自动拉取数据库内所有设备，并在本地生成微信扫码二维码。排版已针对 A4 纸/标签贴纸优化。
+        </p>
+      </div>
+      <div class="flex gap-2">
+        <button onclick="window.print()" class="bg-blue-600 hover:bg-blue-700 text-white font-bold py-2.5 px-6 rounded-xl shadow-md transition active:scale-95 flex items-center gap-1.5 text-sm">
+          🖨️ 开始打印 (Ctrl + P)
+        </button>
+        <a href="index.html" class="bg-slate-100 hover:bg-slate-200 text-slate-700 font-semibold py-2.5 px-4 rounded-xl transition text-sm">
+          返回借还主页
+        </a>
+      </div>
+    </div>
+
+    <!-- 筛选工具栏 -->
+    <div class="border-t border-slate-100 pt-4 flex flex-wrap gap-4 text-xs font-semibold">
+      <div class="flex items-center gap-2">
+        <span class="text-slate-400">分类筛选:</span>
+        <select id="filter-category" onchange="filterDevices()" class="border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none">
+          <option value="ALL">全部</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-slate-400">保管人筛选:</span>
+        <select id="filter-owner" onchange="filterDevices()" class="border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none">
+          <option value="ALL">全部</option>
+        </select>
+      </div>
+      <div class="flex items-center gap-2">
+        <span class="text-slate-400">存放位置筛选:</span>
+        <select id="filter-location" onchange="filterDevices()" class="border border-slate-200 rounded-lg px-3 py-1.5 focus:outline-none">
+          <option value="ALL">全部</option>
+        </select>
+      </div>
+      <div class="ml-auto text-slate-400 flex items-center">
+        共找到 <span id="device-count" class="text-blue-600 font-bold mx-1">0</span> 个设备
+      </div>
+    </div>
+  </header>
+
+  <!-- 加载状态 -->
+  <div id="loading-state" class="text-center py-20 space-y-3 no-print">
+    <div class="animate-spin rounded-full h-12 w-10 border-b-2 border-blue-600 mx-auto"></div>
+    <p class="text-slate-400 text-sm">正在为您从数据库拉取 180+ 设备信息...</p>
+  </div>
+
+  <!-- 标签打印网格容器 (A4 纸排版：电脑上显示3列，打印时完美自适应) -->
+  <div id="labels-grid" class="max-w-5xl mx-auto grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+    <!-- 标签卡片将动态插入到这里 -->
+  </div>
+
+  <script>
+    // 1. 填入你的 Supabase 配置
+    let SUPABASE_URL = "https://sslqnzfezflbtccwstkd.supabase.co/rest/v1/";
+    const SUPABASE_KEY = "sb_publishable_HoPbeml9qwno-0k0EgBBEQ_epNishVC";
+
+    if (SUPABASE_URL.endsWith('/rest/v1/')) {
+      SUPABASE_URL = SUPABASE_URL.replace('/rest/v1/', '');
+    } else if (SUPABASE_URL.endsWith('/rest/v1')) {
+      SUPABASE_URL = SUPABASE_URL.replace('/rest/v1', '');
+    }
+
+    let supabaseClient = null;
+    let allDevices = [];
+
+    // 2. 页面加载
+    window.addEventListener('DOMContentLoaded', async () => {
+      if (!window.supabase) {
+        alert("依赖库加载失败，请检查网络！");
+        return;
+      }
+      supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      await fetchAllDevices();
+    });
+
+    // 3. 从数据库获取所有设备
+    async function fetchAllDevices() {
+      try {
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('*')
+          .order('device_id', { ascending: true }); // 按 ID 升序排列
+
+        if (error) throw error;
+        
+        allDevices = data || [];
+        document.getElementById('loading-state').classList.add('hidden');
+        
+        // 初始化筛选下拉菜单
+        initFilters();
+        // 渲染标签
+        renderLabels(allDevices);
+      } catch (err) {
+        alert("获取设备列表失败: " + err.message);
+      }
+    }
+
+    // 4. 初始化筛选框
+    function initFilters() {
+      const categories = new Set();
+      const owners = new Set();
+      const locations = new Set();
+
+      allDevices.forEach(dev => {
+        if (dev.category) categories.add(dev.category);
+        if (dev.owner) owners.add(dev.owner);
+        if (dev.location) locations.add(dev.location);
+      });
+
+      populateSelect('filter-category', categories);
+      populateSelect('filter-owner', owners);
+      populateSelect('filter-location', locations);
+    }
+
+    function populateSelect(elementId, set) {
+      const select = document.getElementById(elementId);
+      Array.from(set).sort().forEach(val => {
+        const opt = document.createElement('option');
+        opt.value = val;
+        opt.innerText = val;
+        select.appendChild(opt);
+      });
+    }
+
+    // 5. 过滤并重新渲染
+    function filterDevices() {
+      const cat = document.getElementById('filter-category').value;
+      const owner = document.getElementById('filter-owner').value;
+      const loc = document.getElementById('filter-location').value;
+
+      const filtered = allDevices.filter(dev => {
+        const matchCat = (cat === 'ALL' || dev.category === cat);
+        const matchOwner = (owner === 'ALL' || dev.owner === owner);
+        const matchLoc = (loc === 'ALL' || dev.location === loc);
+        return matchCat && matchOwner && matchLoc;
+      });
+
+      renderLabels(filtered);
+    }
+
+    // 6. 渲染所有标签卡片
+    function renderLabels(devicesList) {
+      const container = document.getElementById('labels-grid');
+      container.innerHTML = "";
+      
+      document.getElementById('device-count').innerText = devicesList.length;
+
+      if (devicesList.length === 0) {
+        container.innerHTML = `<div class="col-span-full text-center py-12 text-slate-400 text-sm no-print">没有找到符合筛选条件的设备。</div>`;
+        return;
+      }
+
+      // 循环生成卡片 HTML
+      devicesList.forEach(dev => {
+        const cardId = `qr-card-${dev.device_id}`;
+        const qrContainerId = `qr-container-${dev.device_id}`;
+        
+        // 创建一个卡片容器
+        const card = document.createElement('div');
+        card.id = cardId;
+        // 精心设计的标准标签纸尺寸比例 (适合 70mm * 50mm 标签)
+        card.className = "label-card bg-white border border-slate-200 rounded-xl p-4 flex gap-4 items-center shadow-sm max-w-sm mx-auto";
+        
+        card.innerHTML = `
+          <!-- 二维码 -->
+          <div class="flex-shrink-0 bg-white p-1 border border-slate-100 rounded-lg">
+            <div id="${qrContainerId}" class="w-24 h-24"></div>
+          </div>
+          <!-- 信息 -->
+          <div class="flex-grow space-y-1 text-xs overflow-hidden">
+            <p class="font-black text-sm text-slate-900 leading-tight truncate" title="${dev.name}">${dev.name}</p>
+            <p class="font-mono font-bold text-blue-600">${dev.device_id}</p>
+            <div class="text-[10px] text-slate-500 space-y-0.5 border-t border-slate-100 pt-1">
+              <p class="truncate">保管: <span class="font-semibold text-slate-700">${dev.owner || '暂无'}</span></p>
+              <p class="truncate">位置: <span class="font-semibold text-slate-700">${dev.location || '暂无'}</span></p>
+            </div>
+            <p class="text-[8px] text-slate-400 pt-1 border-t border-slate-50 text-center">微信扫码一键借还</p>
+          </div>
+        `;
+
+        container.appendChild(card);
+
+        // 异步在卡片内绘制二维码 (指向微信扫码直达链接)
+        const targetUrl = `https://sanshu56.github.io/VD-test-devices/?id=${dev.device_id}`;
+        new QRCode(document.getElementById(qrContainerId), {
+          text: targetUrl,
+          width: 96,
+          height: 96,
+          colorDark : "#0f172a",
+          colorLight : "#ffffff",
+          correctLevel : QRCode.CorrectLevel.H
+        });
+      });
+    }
+  </script>
+</body>
+</html>
