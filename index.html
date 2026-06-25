@@ -4,16 +4,19 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>VD 测试设备扫码借还系统</title>
-  <!-- 引入 Tailwind CSS 美化 UI -->
-  <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Supabase 官方 JS SDK (国内高速镜像) -->
-  <script src="https://npm.elemecdn.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!-- 引入 H5 扫码库 -->
-  <script src="https://cdn.bootcdn.net/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
-  <!-- 引入纯 JS 本地二维码生成库 -->
-  <script src="https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+  <!-- 基础样式，防止加载时闪烁 -->
+  <style>
+    .hidden { display: none !important; }
+  </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+  <!-- ================= 🌟 全局依赖加载遮罩层 ================= -->
+  <div id="global-loading" class="fixed inset-0 bg-slate-50 flex flex-col items-center justify-center z-[9999] p-6 text-center">
+    <div class="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+    <h3 class="text-md font-bold text-slate-700">正在安全加载系统依赖库...</h3>
+    <p class="text-xs text-slate-400 mt-2">系统正在智能调配最快的 CDN 节点，首次加载约需 2-4 秒，请稍候</p>
+  </div>
 
   <!-- 顶部导航栏 -->
   <header class="bg-blue-600 text-white shadow-md py-4 px-4 sticky top-0 z-50">
@@ -56,7 +59,7 @@
         </div>
       </div>
 
-      <!-- 数据库真实设备快捷测试通道 -->
+      <!-- 💡 数据库真实设备快捷测试通道 -->
       <div id="test-devices-section" class="bg-amber-50 rounded-2xl p-6 shadow-sm border border-amber-100 space-y-4 hidden">
         <h3 class="text-md font-bold text-amber-800 flex items-center gap-1.5">
           <span>💡</span> 数据库内真实设备 (快捷测试)
@@ -227,21 +230,128 @@
     let currentDevice = null;
     let html5QrScanner = null;
 
-    try {
-      if (!window.supabase) {
-        alert("🚨 依赖库加载失败！请检查手机网络。");
-      } else {
-        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+    // 🌟 核心升级：智能 CDN 自动避让与重试加载函数
+    function loadScriptPromise(urls) {
+      return new Promise((resolve) => {
+        let index = 0;
+        function tryLoad() {
+          if (index >= urls.length) {
+            resolve(false); // 所有节点加载失败
+            return;
+          }
+          const script = document.createElement('script');
+          script.src = urls[index];
+          script.onload = () => resolve(true); // 加载成功
+          script.onerror = () => {
+            console.warn(`CDN 节点失效，正在自动尝试备用节点: ${urls[index]}`);
+            index++;
+            tryLoad(); // 递归尝试下一个
+          };
+          document.head.appendChild(script);
+        }
+        tryLoad();
+      });
+    }
+
+    // 🌟 核心升级：并行智能加载所有依赖库
+    async function initDependencies() {
+      // 1. Supabase SDK 备用节点
+      const supabaseUrls = [
+        "https://gcore.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js", // 极速 GCore
+        "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js",       // 官方 jsDelivr
+        "https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js",                 // 官方 UNPKG
+        "https://unpkg.zhimg.com/@supabase/supabase-js@2/dist/umd/supabase.js"             // 知乎国内镜像
+      ];
+      
+      // 2. html5-qrcode 扫码库备用节点
+      const html5QrcodeUrls = [
+        "https://cdn.bootcdn.net/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js",       // 国内 BootCDN
+        "https://gcore.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js",
+        "https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"
+      ];
+      
+      // 3. qrcodejs 二维码生成库备用节点
+      const qrcodeUrls = [
+        "https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js",                 // 国内 BootCDN
+        "https://gcore.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js",
+        "https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"
+      ];
+
+      // 4. Tailwind CSS 样式库
+      const tailwindUrls = [
+        "https://cdn.tailwindcss.com"
+      ];
+
+      // 并行异步加载
+      const [sbOk, h5Ok, qrOk, twOk] = await Promise.all([
+        loadScriptPromise(supabaseUrls),
+        loadScriptPromise(html5QrcodeUrls),
+        loadScriptPromise(qrcodeUrls),
+        loadScriptPromise(tailwindUrls)
+      ]);
+
+      return { sbOk, h5Ok, qrOk };
+    }
+
+    // 🌟 核心升级：全局加载遮罩层控制
+    function showGlobalLoading(show) {
+      const loader = document.getElementById('global-loading');
+      if (loader) {
+        if (show) loader.classList.remove('hidden');
+        else loader.classList.add('hidden');
       }
-    } catch (e) {
-      console.error("初始化 Supabase 客户端出错: ", e);
+    }
+
+    // 🌟 核心升级：优雅的启动失败卡片
+    function showFatalError(msg) {
+      const loader = document.getElementById('global-loading');
+      if (loader) {
+        loader.innerHTML = `
+          <div class="max-w-md p-6 bg-white rounded-2xl shadow-lg border border-rose-100 text-center space-y-4 mx-4">
+            <div class="text-rose-500 text-5xl">❌</div>
+            <h3 class="text-lg font-bold text-slate-800">系统启动失败</h3>
+            <p class="text-xs text-slate-500 text-left leading-relaxed whitespace-pre-wrap">${msg}</p>
+            <button onclick="window.location.reload()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl transition text-sm">
+              🔄 重新加载网页
+            </button>
+          </div>
+        `;
+      }
     }
 
     // 2. 页面生命周期
-    window.addEventListener('DOMContentLoaded', () => {
+    window.addEventListener('DOMContentLoaded', async () => {
+      showGlobalLoading(true);
+
+      // 智能加载依赖库
+      const { sbOk } = await initDependencies();
+
+      if (!sbOk || !window.supabase) {
+        showFatalError(
+          "🚨 依赖库加载失败！\n\n" +
+          "原因：由于公司内网防火墙拦截，系统无法加载外网数据库 SDK。\n\n" +
+          "💡 解决方法：\n" +
+          "1. 请尝试断开公司内网 VPN，切换到手机移动数据（4G/5G网络）。\n" +
+          "2. 刷新此网页即可秒开进入。"
+        );
+        return;
+      }
+
+      // 初始化 Supabase 客户端
+      try {
+        supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+      } catch (e) {
+        showFatalError("初始化 Supabase 客户端出错: " + e.message);
+        return;
+      }
+
+      // 隐藏加载层，进入系统
+      showGlobalLoading(false);
+
+      // 路由解析
       const urlParams = new URLSearchParams(window.location.search);
       const deviceId = urlParams.get('id');
-      const adminName = urlParams.get('admin'); // 支持通过链接直接进入管理员审批
+      const adminName = urlParams.get('admin');
       
       if (adminName) {
         openAdminPanel();
@@ -327,40 +437,29 @@
       const returnRequestForm = document.getElementById('action-return-request');
       const pendingConfirmBox = document.getElementById('action-pending-confirm');
 
-      // 核心业务状态分支：
       const currentStatus = currentDevice.status || '库房中';
 
       if (currentStatus === '待确认归还') {
-        // 待确认归还状态
         statusBadge.innerText = "归还待确认";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700";
-        
         borrowForm.classList.add('hidden');
         returnRequestForm.classList.add('hidden');
         pendingConfirmBox.classList.remove('hidden');
         document.getElementById('pending-owner-name').innerText = currentDevice.owner || "暂无";
-
       } else if (currentDevice.current_borrower) {
-        // 已借出状态
         statusBadge.innerText = "已借出";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700";
-        
         borrowForm.classList.add('hidden');
         returnRequestForm.classList.remove('hidden');
         pendingConfirmBox.classList.add('hidden');
-
         document.getElementById('current-borrower-name').innerText = currentDevice.current_borrower;
         document.getElementById('borrow-time-tag').innerText = new Date(currentDevice.borrow_time).toLocaleString('zh-CN');
       } else {
-        // 库房中 (可用)
         statusBadge.innerText = "库房中";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700";
-        
         borrowForm.classList.remove('hidden');
         returnRequestForm.classList.add('hidden');
         pendingConfirmBox.classList.add('hidden');
-        
-        // 🌟 核心体验优化：从本地缓存自动读取上次输入的名字，免去每次输入的麻烦！
         const savedName = localStorage.getItem('vd_user_nickname') || "";
         document.getElementById('borrower-name').value = savedName;
         document.getElementById('expected-return-date').value = "";
@@ -377,9 +476,7 @@
         return;
       }
 
-      // 🌟 保存名字到本地浏览器缓存中，下次打开自动填好！
       localStorage.setItem('vd_user_nickname', borrowerName);
-
       const borrowTime = new Date().toISOString();
 
       try {
@@ -411,22 +508,18 @@
       }
     }
 
-    // 7. 员工提交：申请归还（触发微信推送给管理员）
+    // 7. 员工提交：申请归还（微信推送）
     async function submitReturnRequest() {
       const borrower = currentDevice.current_borrower;
       
       try {
-        // a. 更新设备表状态为“待确认归还”
         const { error: devError } = await supabaseClient
           .from('devices')
-          .update({
-            status: '待确认归还'
-          })
+          .update({ status: '待确认归还' })
           .eq('device_id', currentDevice.device_id);
 
         if (devError) throw devError;
 
-        // b. 🚀 微信远程推送逻辑 (如果配置了 admin_push_key)
         if (currentDevice.admin_push_key) {
           const adminUrl = `https://sanshu56.github.io/VD-test-devices/?admin=${encodeURIComponent(currentDevice.owner)}`;
           const title = `🚨 设备归还确认申请`;
@@ -437,10 +530,7 @@
                        `* **保管管理员**：${currentDevice.owner}\n\n` +
                        `[👉 点击此处一键确认归还](${adminUrl})`;
 
-          // 调用 Server酱 免费微信推送接口
           const pushUrl = `https://sctapi.ftqq.com/${currentDevice.admin_push_key}.send`;
-          
-          // 异步发送，不阻塞页面逻辑
           fetch(pushUrl, {
             method: 'POST',
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
@@ -470,7 +560,6 @@
       goHome();
     }
 
-    // 加载专属我的待处理归还申请
     async function loadAdminRequests() {
       const adminName = document.getElementById('admin-name-input').value.trim();
       const listContainer = document.getElementById('admin-request-list');
@@ -512,12 +601,10 @@
       }
     }
 
-    // 管理员点击：确认归还入库
     async function approveReturn(deviceId, borrower) {
       if (!confirm(`确认设备 ${deviceId} 已安全入库吗？`)) return;
 
       try {
-        // a. 清空设备表借用信息
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({
@@ -530,7 +617,6 @@
 
         if (devError) throw devError;
 
-        // b. 插入归还日志
         await supabaseClient
           .from('borrow_logs')
           .insert({
@@ -540,7 +626,7 @@
           });
 
         alert("设备入库成功！");
-        loadAdminRequests(); // 刷新列表
+        loadAdminRequests();
       } catch (err) {
         alert("确认入库失败: " + err.message);
       }
