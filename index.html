@@ -6,10 +6,12 @@
   <title>VD 测试设备扫码借还系统</title>
   <!-- 引入 Tailwind CSS 美化 UI -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Supabase 官方 JS SDK -->
-  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-  <!-- 引入 H5 扫码库 -->
-  <script src="https://unpkg.com/html5-qrcode"></script>
+  <!-- 引入 Supabase 官方 JS SDK (使用国内高速镜像，确保微信秒开) -->
+  <script src="https://npm.elemecdn.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <!-- 引入 H5 扫码库 (使用国内高速镜像) -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
+  <!-- 引入纯 JS 本地二维码生成库 -->
+  <script src="https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
 
@@ -51,6 +53,14 @@
         </div>
       </div>
 
+      <!-- 💡 数据库真实设备快捷测试通道 -->
+      <div id="test-devices-section" class="bg-amber-50 rounded-2xl p-6 shadow-sm border border-amber-100 space-y-4 hidden">
+        <h3 class="text-md font-bold text-amber-800 flex items-center gap-1.5">
+          <span>💡</span> 数据库内真实设备 (快捷测试)
+        </h3>
+        <div id="test-devices-list" class="flex flex-wrap gap-2 pt-1"></div>
+      </div>
+
       <!-- 最近借还动态 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
         <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5">
@@ -79,6 +89,16 @@
       <div id="detail-loading" class="text-center py-12 space-y-3">
         <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto"></div>
         <p class="text-slate-400 text-sm">正在检索设备信息...</p>
+      </div>
+
+      <!-- 优雅的网页端错误提示卡片 -->
+      <div id="detail-error" class="hidden bg-white rounded-2xl p-8 shadow-sm border border-rose-100 text-center space-y-4">
+        <div class="text-rose-500 text-5xl">❌</div>
+        <h3 class="text-lg font-bold text-slate-700">查询设备失败</h3>
+        <p id="detail-error-msg" class="text-sm text-slate-500 whitespace-pre-wrap">具体错误原因</p>
+        <button onclick="goHome()" class="w-full bg-slate-800 hover:bg-slate-900 text-white font-semibold py-3 rounded-xl transition">
+          返回首页
+        </button>
       </div>
 
       <!-- 设备信息卡片 -->
@@ -118,28 +138,24 @@
             <strong>备注提示：</strong> <span id="device-notes"></span>
           </div>
 
-          <!-- 新增：生成标签按钮 -->
+          <!-- 生成标签按钮 -->
           <div class="pt-2 border-t border-slate-50">
-            <button onclick="toggleLabelGenerator()" class="w-full py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition">
-              🏷️ 生成/打印该设备二维码贴纸
+            <button onclick="toggleLabelGenerator()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition">
+              🏷️ 生成该设备二维码贴纸
             </button>
           </div>
         </div>
 
-        <!-- 新增：标签贴纸预览区域 -->
+        <!-- 标签贴纸预览区域 -->
         <div id="label-generator-box" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
           <div class="flex justify-between items-center">
-            <h3 class="text-sm font-bold text-slate-700">设备贴纸预览 (可直接截图或打印)</h3>
+            <h3 class="text-sm font-bold text-slate-700">设备贴纸预览 (可直接截图)</h3>
             <button onclick="toggleLabelGenerator()" class="text-xs text-slate-400">收起</button>
           </div>
-          
-          <!-- 贴纸实体 (精心设计，适合打印成 70mm * 50mm 左右的标签纸) -->
           <div class="border-2 border-dashed border-slate-300 p-4 rounded-xl bg-white flex gap-4 items-center max-w-sm mx-auto shadow-inner">
-            <!-- 二维码 -->
             <div class="flex-shrink-0 bg-white p-1 border border-slate-100 rounded-lg">
-              <img id="label-qr-image" src="" alt="设备二维码" class="w-24 h-24">
+              <div id="label-qr-div" class="w-24 h-24"></div>
             </div>
-            <!-- 文字信息 -->
             <div class="flex-grow space-y-1 text-xs">
               <p class="font-black text-sm text-slate-900 leading-tight" id="label-device-name">设备名称</p>
               <p class="font-mono font-bold text-blue-600" id="label-device-id">ID: -</p>
@@ -158,14 +174,19 @@
           <div class="space-y-3">
             <div>
               <label class="block text-xs font-bold text-slate-500 mb-1">借用人姓名 <span class="text-rose-500">*</span></label>
-              <input type="text" id="borrower-name" placeholder="请输入你的名字" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+              <input type="text" id="borrower-name" placeholder="请输入借用人真实姓名" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-500 mb-1">预计归还日期</label>
               <input type="date" id="expected-return-date" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
             </div>
+            <!-- 新增：管理员密码确认 -->
+            <div>
+              <label class="block text-xs font-bold text-amber-600 mb-1">管理员确认密码 <span class="text-rose-500">*</span></label>
+              <input type="password" id="borrow-admin-pin" placeholder="必须由设备管理员输入确认密码" class="w-full border border-amber-200 bg-amber-50/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500">
+            </div>
             <button onclick="submitBorrow()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
-              ✍️ 确认借出
+              ✍️ 管理员确认借出
             </button>
           </div>
         </div>
@@ -187,9 +208,16 @@
               <span id="expected-return-tag" class="font-semibold text-rose-600">-</span>
             </div>
           </div>
-          <button onclick="submitReturn()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
-            🔄 确认归还并入库
-          </button>
+          <!-- 新增：管理员密码确认 -->
+          <div class="space-y-3 pt-2">
+            <div>
+              <label class="block text-xs font-bold text-amber-600 mb-1">管理员确认密码 <span class="text-rose-500">*</span></label>
+              <input type="password" id="return-admin-pin" placeholder="必须由设备管理员输入确认密码" class="w-full border border-amber-200 bg-amber-50/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500">
+            </div>
+            <button onclick="submitReturn()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
+              🔄 管理员确认归还并入库
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -201,6 +229,9 @@
     // 1. 填入你的 Supabase 配置
     let SUPABASE_URL = "https://sslqnzfezflbtccwstkd.supabase.co/rest/v1/";
     const SUPABASE_KEY = "sb_publishable_HoPbeml9qwno-0k0EgBBEQ_epNishVC";
+
+    // 🌟 在这里设置你的管理员确认密码 (可随时修改为你喜欢的数字或字母)
+    const GLOBAL_ADMIN_PIN = "8888"; 
 
     if (SUPABASE_URL.endsWith('/rest/v1/')) {
       SUPABASE_URL = SUPABASE_URL.replace('/rest/v1/', '');
@@ -214,19 +245,20 @@
 
     try {
       if (!window.supabase) {
-        alert("🚨 依赖库加载失败！");
+        const warnDiv = document.createElement('div');
+        warnDiv.className = "bg-rose-500 text-white text-center py-2 text-xs font-bold sticky top-0 z-[9999]";
+        warnDiv.innerText = "🚨 依赖库加载失败！请检查手机网络。";
+        document.body.insertBefore(warnDiv, document.body.firstChild);
       } else {
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
       }
     } catch (e) {
-      alert("初始化 Supabase 客户端出错: " + e.message);
+      console.error("初始化 Supabase 客户端出错: ", e);
     }
 
-    // 2. 页面加载
     window.addEventListener('DOMContentLoaded', () => {
       const urlParams = new URLSearchParams(window.location.search);
       const deviceId = urlParams.get('id');
-      
       if (deviceId) {
         showDetail(deviceId);
       } else {
@@ -234,7 +266,6 @@
       }
     });
 
-    // 3. 回到首页
     function goHome() {
       window.history.replaceState({}, document.title, window.location.pathname);
       document.getElementById('view-home').classList.remove('hidden');
@@ -242,24 +273,23 @@
       document.getElementById('view-detail').classList.add('hidden');
       stopScanner();
       loadRecentLogs();
+      loadTestDevices();
     }
 
-    // 4. 展示详情页
     async function showDetail(deviceId) {
-      if (!supabaseClient) {
-        alert("数据库未连接！");
-        return;
-      }
-
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-detail').classList.remove('hidden');
-      
       document.getElementById('detail-loading').classList.remove('hidden');
       document.getElementById('detail-content').classList.add('hidden');
-      document.getElementById('label-generator-box').classList.add('hidden'); // 默认隐藏标签生成器
-      
+      document.getElementById('detail-error').classList.add('hidden');
+      document.getElementById('label-generator-box').classList.add('hidden');
       stopScanner();
+
+      if (!supabaseClient) {
+        showErrorState("数据库客户端初始化失败，请刷新重试！");
+        return;
+      }
       
       try {
         const { data, error } = await supabaseClient
@@ -268,18 +298,24 @@
           .eq('device_id', deviceId)
           .single();
           
-        if (error) throw new Error(error.message);
-        if (!data) throw new Error("数据库中未找到该设备。");
+        if (error) throw new Error(`数据库查询报错: ${error.message}`);
+        if (!data) throw new Error(`未找到该设备。\n\n扫码 ID: "${deviceId}"\n请确认该 ID 是否已录入系统！`);
         
         currentDevice = data;
         renderDeviceDetail();
       } catch (err) {
-        alert("❌ 查询设备失败！\n\n具体错误信息：\n" + err.message);
-        goHome();
+        showErrorState(err.message);
       }
     }
 
-    // 5. 渲染设备详情
+    function showErrorState(msg) {
+      document.getElementById('detail-loading').classList.add('hidden');
+      document.getElementById('detail-content').classList.add('hidden');
+      const errBox = document.getElementById('detail-error');
+      errBox.classList.remove('hidden');
+      document.getElementById('detail-error-msg').innerText = msg;
+    }
+
     function renderDeviceDetail() {
       document.getElementById('detail-loading').classList.add('hidden');
       document.getElementById('detail-content').classList.remove('hidden');
@@ -312,6 +348,7 @@
         document.getElementById('current-borrower-name').innerText = currentDevice.current_borrower;
         document.getElementById('borrow-time-tag').innerText = new Date(currentDevice.borrow_time).toLocaleString('zh-CN');
         document.getElementById('expected-return-tag').innerText = currentDevice.expected_return_date ? currentDevice.expected_return_date : "未设置";
+        document.getElementById('return-admin-pin').value = ""; // 重置密码框
       } else {
         statusBadge.innerText = "库房中";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700";
@@ -320,39 +357,50 @@
         
         document.getElementById('borrower-name').value = "";
         document.getElementById('expected-return-date').value = "";
+        document.getElementById('borrow-admin-pin').value = ""; // 重置密码框
       }
     }
 
-    // 🌟 新增：切换显示二维码贴纸生成器
     function toggleLabelGenerator() {
       const box = document.getElementById('label-generator-box');
       if (box.classList.contains('hidden')) {
-        // 渲染贴纸内容
         document.getElementById('label-device-name').innerText = currentDevice.name;
         document.getElementById('label-device-id').innerText = "ID: " + currentDevice.device_id;
         document.getElementById('label-device-owner').innerText = currentDevice.owner || "暂无";
         document.getElementById('label-device-location').innerText = currentDevice.location || "暂无";
-        
-        // 动态生成二维码图片（指向你当前的 GitHub Pages 链接）
-        const targetUrl = `https://sanshu56.github.io/VD-test-devices/?id=${currentDevice.device_id}`;
-        const qrApiUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(targetUrl)}`;
-        document.getElementById('label-qr-image').src = qrApiUrl;
-
         box.classList.remove('hidden');
-        // 滚动到贴纸视图
+
+        const targetUrl = `https://sanshu56.github.io/VD-test-devices/?id=${currentDevice.device_id}`;
+        const qrDiv = document.getElementById('label-qr-div');
+        qrDiv.innerHTML = "";
+        new QRCode(qrDiv, {
+          text: targetUrl,
+          width: 96,
+          height: 96,
+          colorDark : "#0f172a",
+          colorLight : "#ffffff",
+          correctLevel : QRCode.CorrectLevel.H
+        });
         box.scrollIntoView({ behavior: 'smooth' });
       } else {
         box.classList.add('hidden');
       }
     }
 
-    // 6. 提交借出登记
+    // 7. 提交借出登记 (带密码验证)
     async function submitBorrow() {
       const borrowerName = document.getElementById('borrower-name').value.trim();
       const expectedReturnDate = document.getElementById('expected-return-date').value;
+      const adminPin = document.getElementById('borrow-admin-pin').value.trim();
 
       if (!borrowerName) {
         alert("请输入借用人姓名！");
+        return;
+      }
+      
+      // 验证管理员确认密码
+      if (adminPin !== GLOBAL_ADMIN_PIN) {
+        alert("❌ 管理员确认密码不正确，无法登记借出！");
         return;
       }
 
@@ -380,16 +428,23 @@
             notes: currentDevice.notes
           });
 
-        alert(`登记成功！设备已成功登记借用给：${borrowerName}`);
+        alert(`登记成功！设备已借出给：${borrowerName}`);
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("登记失败: " + err.message);
       }
     }
 
-    // 7. 提交归还登记
+    // 8. 提交归还登记 (带密码验证)
     async function submitReturn() {
       const formerBorrower = currentDevice.current_borrower;
+      const adminPin = document.getElementById('return-admin-pin').value.trim();
+
+      // 验证管理员确认密码
+      if (adminPin !== GLOBAL_ADMIN_PIN) {
+        alert("❌ 管理员确认密码不正确，无法登记归还！");
+        return;
+      }
 
       try {
         const { error: devError } = await supabaseClient
@@ -418,25 +473,20 @@
       }
     }
 
-    // 8. 加载最近 5 条日志
     async function loadRecentLogs() {
       const container = document.getElementById('recent-logs');
       if (!supabaseClient) return;
-      
       try {
         const { data, error } = await supabaseClient
           .from('borrow_logs')
           .select('*, devices(name)')
           .order('action_time', { ascending: false })
           .limit(5);
-
         if (error) throw error;
-
         if (!data || data.length === 0) {
           container.innerHTML = `<p class="text-slate-400 text-center py-4">暂无借还记录</p>`;
           return;
         }
-
         container.innerHTML = data.map(log => {
           const timeStr = new Date(log.action_time).toLocaleDateString('zh-CN') + ' ' + new Date(log.action_time).toLocaleTimeString('zh-CN', {hour: '2-digit', minute:'2-digit'});
           const isBorrow = log.action_type === 'borrow';
@@ -461,13 +511,32 @@
       }
     }
 
-    // 9. 开启摄像头扫码
+    async function loadTestDevices() {
+      const container = document.getElementById('test-devices-list');
+      if (!supabaseClient) return;
+      try {
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('device_id, name')
+          .limit(3);
+        if (error) throw error;
+        if (data && data.length > 0) {
+          document.getElementById('test-devices-section').classList.remove('hidden');
+          container.innerHTML = data.map(dev => `
+            <button onclick="showDetail('${dev.device_id}')" class="bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-bold py-2 px-3 rounded-lg border border-blue-100 transition shadow-sm">
+              🔍 ${dev.name}
+            </button>
+          `).join('');
+        }
+      } catch (err) {
+        console.error("加载快捷测试设备失败: ", err);
+      }
+    }
+
     function startScanner() {
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.remove('hidden');
-
       html5QrScanner = new Html5Qrcode("interactive-scanner");
-      
       const config = { 
         fps: 10, 
         qrbox: (width, height) => {
@@ -475,7 +544,6 @@
           return { width: size, height: size };
         }
       };
-
       html5QrScanner.start(
         { facingMode: "environment" },
         config,
@@ -494,12 +562,11 @@
         },
         (errorMessage) => {}
       ).catch(err => {
-        alert("无法开启摄像头，请确认是否授予网页相机权限！");
+        showErrorState("无法开启摄像头，请确认是否授予网页相机权限！");
         goHome();
       });
     }
 
-    // 10. 关闭摄像头
     function stopScanner() {
       if (html5QrScanner) {
         html5QrScanner.stop().then(() => {
@@ -508,11 +575,10 @@
       }
     }
 
-    // 11. 手动查询 ID
     function searchManualId() {
       const id = document.getElementById('manual-id-input').value.trim();
       if (!id) {
-        alert("请输入设备 ID！");
+        showErrorState("请输入设备 ID！");
         return;
       }
       showDetail(id);
