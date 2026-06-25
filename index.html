@@ -58,7 +58,37 @@
         </div>
       </div>
 
-      <!-- 💡 数据库真实设备快捷测试通道 -->
+      <!-- 🌟 新增：设备清单快速查询卡片 -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
+        <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5">
+          <span>📊</span> 设备清单快速查询
+        </h3>
+        
+        <!-- Tab 切换 -->
+        <div class="flex bg-slate-100 p-1 rounded-xl">
+          <button id="tab-query-admin" onclick="switchQueryTab('admin')" class="flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm">
+            我是管理员
+          </button>
+          <button id="tab-query-borrower" onclick="switchQueryTab('borrower')" class="flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400">
+            我是借用人
+          </button>
+        </div>
+
+        <!-- 输入框与查询按钮 -->
+        <div class="flex gap-2">
+          <input type="text" id="query-name-input" placeholder="输入管理员姓名 (如: 张三)" class="flex-grow border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+          <button onclick="runListQuery()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs transition active:scale-95">查询清单</button>
+        </div>
+
+        <!-- 查询结果展示区 -->
+        <div id="query-results-box" class="hidden space-y-3 pt-2 border-t border-slate-50">
+          <div id="query-results-list" class="space-y-3 max-h-80 overflow-y-auto pr-1">
+            <!-- 动态渲染查询结果 -->
+          </div>
+        </div>
+      </div>
+
+      <!-- 数据库真实设备快捷测试通道 -->
       <div id="test-devices-section" class="bg-amber-50 rounded-2xl p-6 shadow-sm border border-amber-100 space-y-4 hidden">
         <h3 class="text-md font-bold text-amber-800 flex items-center gap-1.5">
           <span>💡</span> 数据库内真实设备 (快捷测试)
@@ -228,6 +258,7 @@
     let supabaseClient = null;
     let currentDevice = null;
     let html5QrScanner = null;
+    let activeQueryTab = 'admin'; // 'admin' 或 'borrower'
 
     // 智能 CDN 自动避让与重试加载函数
     function loadScriptPromise(urls) {
@@ -328,6 +359,9 @@
 
       showGlobalLoading(false);
 
+      // 初始化查询列表的默认 Tab 状态
+      switchQueryTab('admin');
+
       const urlParams = new URLSearchParams(window.location.search);
       const deviceId = urlParams.get('id');
       const adminName = urlParams.get('admin');
@@ -353,6 +387,11 @@
       stopScanner();
       loadRecentLogs();
       loadTestDevices();
+      
+      // 刷新当前的查询列表
+      if (!document.getElementById('query-results-box').classList.contains('hidden')) {
+        runListQuery();
+      }
     }
 
     // 展示详情页
@@ -525,6 +564,129 @@
       }
     }
 
+    // ================= 🌟 新增：清单查询交互逻辑 =================
+
+    // 切换查询标签页
+    function switchQueryTab(tab) {
+      activeQueryTab = tab;
+      const adminTab = document.getElementById('tab-query-admin');
+      const borrowerTab = document.getElementById('tab-query-borrower');
+      const input = document.getElementById('query-name-input');
+      const resultsBox = document.getElementById('query-results-box');
+
+      // 清空上次查询结果
+      resultsBox.classList.add('hidden');
+      document.getElementById('query-results-list').innerHTML = '';
+
+      if (tab === 'admin') {
+        adminTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm";
+        borrowerTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+        input.placeholder = "输入管理员姓名 (如: 张三)";
+        input.value = localStorage.getItem('vd_query_admin_name') || "";
+      } else {
+        adminTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+        borrowerTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm";
+        input.placeholder = "输入借用人姓名 (如: 李四)";
+        input.value = localStorage.getItem('vd_query_borrower_name') || "";
+      }
+    }
+
+    // 执行设备清单查询
+    async function runListQuery() {
+      const name = document.getElementById('query-name-input').value.trim();
+      const resultsBox = document.getElementById('query-results-box');
+      const resultsList = document.getElementById('query-results-list');
+
+      if (!name) {
+        alert("请输入姓名进行查询！");
+        return;
+      }
+
+      resultsBox.classList.remove('hidden');
+      resultsList.innerHTML = `<p class="text-slate-400 text-center py-6 text-xs">正在为您检索清单...</p>`;
+
+      try {
+        let data = [];
+        let error = null;
+
+        if (activeQueryTab === 'admin') {
+          // 记住管理员名字
+          localStorage.setItem('vd_query_admin_name', name);
+          const res = await supabaseClient
+            .from('devices')
+            .select('*')
+            .eq('owner', name)
+            .order('device_id', { ascending: true });
+          data = res.data;
+          error = res.error;
+        } else {
+          // 记住借用人名字
+          localStorage.setItem('vd_query_borrower_name', name);
+          const res = await supabaseClient
+            .from('devices')
+            .select('*')
+            .eq('current_borrower', name)
+            .order('device_id', { ascending: true });
+          data = res.data;
+          error = res.error;
+        }
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          resultsList.innerHTML = `<p class="text-slate-400 text-center py-8 text-xs">🔍 暂无相关绑定设备记录</p>`;
+          return;
+        }
+
+        resultsList.innerHTML = data.map(dev => {
+          const status = dev.status || '库房中';
+          let badgeColor = '';
+          let statusText = status;
+          let actionBtn = '';
+
+          if (status === '待确认归还') {
+            badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
+            statusText = "待确认归还";
+            // 如果是管理员在查，直接在列表里提供“一键确认”按钮
+            if (activeQueryTab === 'admin') {
+              actionBtn = `
+                <button onclick="approveReturnFromQuery('${dev.device_id}', '${dev.current_borrower}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
+                  确认入库
+                </button>
+              `;
+            }
+          } else if (dev.current_borrower) {
+            badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
+            statusText = `已借出 (${dev.current_borrower})`;
+          } else {
+            badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+          }
+
+          return `
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1 text-left">
+              <div class="flex justify-between items-start gap-2">
+                <div>
+                  <h4 class="font-bold text-slate-800">${dev.name}</h4>
+                  <p class="text-[10px] font-mono text-slate-400">ID: ${dev.device_id}</p>
+                </div>
+                <span class="px-2 py-0.5 text-[9px] font-bold border rounded-full ${badgeColor}">${statusText}</span>
+              </div>
+              ${dev.borrow_time ? `<p class="text-[10px] text-slate-400">借用时间: ${new Date(dev.borrow_time).toLocaleString('zh-CN')}</p>` : ''}
+              ${actionBtn}
+            </div>
+          `;
+        }).join('');
+
+      } catch (err) {
+        resultsList.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">查询失败: ${err.message}</p>`;
+      }
+    }
+
+    // 辅助：从查询结果直接点击确认入库
+    async function approveReturnFromQuery(deviceId, borrower) {
+      await approveReturn(deviceId, borrower);
+    }
+
     // ================= 管理员面板逻辑 =================
 
     function openAdminPanel() {
@@ -565,7 +727,7 @@
         }
 
         listContainer.innerHTML = data.map(dev => `
-          <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center">
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center text-left">
             <div class="space-y-1">
               <h4 class="font-bold text-slate-800 text-sm">${dev.name}</h4>
               <p class="text-xs text-slate-400">ID: ${dev.device_id} · 借用人: <strong class="text-slate-600">${dev.current_borrower}</strong></p>
@@ -580,12 +742,12 @@
       }
     }
 
-    // 🌟 核心升级：带“安全校验”与“本地免输缓存”的归还确认逻辑
+    // 确认归还入库逻辑（支持静默缓存密码、多处列表刷新）
     async function approveReturn(deviceId, borrower) {
       let pin = localStorage.getItem('vd_admin_pin') || "";
       let isAutoChecked = false;
 
-      // 1. 尝试用手机本地缓存的密码进行“静默自动比对”
+      // 1. 自动校验缓存密码
       if (pin) {
         const { data, error } = await supabaseClient
           .from('devices')
@@ -594,14 +756,14 @@
           .eq('admin_pin', pin);
         
         if (!error && data && data.length > 0) {
-          isAutoChecked = true; // 缓存密码正确，自动放行！
+          isAutoChecked = true;
         }
       }
 
-      // 2. 如果本地没有密码，或密码不对，则弹出输入框
+      // 2. 校验失败，提示输入密码
       if (!isAutoChecked) {
         pin = prompt("请输入该设备的管理员确认密码：");
-        if (pin === null) return; // 用户取消了输入
+        if (pin === null) return;
         pin = pin.trim();
         
         if (!pin) {
@@ -609,7 +771,6 @@
           return;
         }
 
-        // 去 Supabase 数据库端比对密码
         const { data, error } = await supabaseClient
           .from('devices')
           .select('device_id')
@@ -621,11 +782,10 @@
           return;
         }
 
-        // 3. 密码验证成功，将正确的密码保存在管理员的手机里
         localStorage.setItem('vd_admin_pin', pin);
       }
 
-      // 4. 密码校验通过，执行数据库入库操作
+      // 3. 执行归还数据更新
       try {
         const { error: devError } = await supabaseClient
           .from('devices')
@@ -648,7 +808,15 @@
           });
 
         alert("🎉 确认成功！设备已安全归还并入库。");
-        loadAdminRequests(); // 刷新待办列表
+
+        // 🌟 智能多列表同步刷新
+        if (!document.getElementById('view-admin').classList.contains('hidden')) {
+          loadAdminRequests(); // 刷新管理员面板
+        }
+        if (!document.getElementById('query-results-box').classList.contains('hidden')) {
+          runListQuery(); // 刷新首页查询清单
+        }
+        loadRecentLogs(); // 刷新最近动态
       } catch (err) {
         alert("确认入库失败: " + err.message);
       }
@@ -678,7 +846,7 @@
           const deviceName = log.devices ? log.devices.name : log.device_id;
 
           return `
-            <div class="flex items-start justify-between p-3 bg-slate-50 rounded-xl border border-slate-100">
+            <div class="flex items-start justify-between p-3 bg-slate-50 rounded-xl border border-slate-100 text-left">
               <div class="space-y-1">
                 <p class="font-bold text-slate-700">${deviceName}</p>
                 <p class="text-xs text-slate-400">${timeStr} · ID: ${log.device_id}</p>
