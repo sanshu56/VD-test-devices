@@ -6,9 +6,9 @@
   <title>VD 测试设备扫码借还系统</title>
   <!-- 引入 Tailwind CSS 美化 UI -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- 引入 Supabase 官方 JS SDK (使用国内高速镜像，确保微信秒开) -->
+  <!-- 引入 Supabase 官方 JS SDK (国内高速镜像) -->
   <script src="https://npm.elemecdn.com/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-  <!-- 引入 H5 扫码库 (使用国内高速镜像) -->
+  <!-- 引入 H5 扫码库 -->
   <script src="https://cdn.bootcdn.net/ajax/libs/html5-qrcode/2.3.8/html5-qrcode.min.js"></script>
   <!-- 引入纯 JS 本地二维码生成库 -->
   <script src="https://cdn.bootcdn.net/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
@@ -21,7 +21,10 @@
       <h1 class="text-lg font-bold tracking-wider flex items-center gap-2" onclick="goHome()">
         <span>🚙</span> VD 设备借还系统
       </h1>
-      <button onclick="goHome()" class="text-sm bg-blue-700 hover:bg-blue-800 px-3 py-1.5 rounded-lg transition">首页</button>
+      <div class="flex gap-2">
+        <button onclick="openAdminPanel()" class="text-xs bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-lg transition">管理员面板</button>
+        <button onclick="goHome()" class="text-xs bg-blue-500 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg transition">首页</button>
+      </div>
     </div>
   </header>
 
@@ -48,12 +51,12 @@
 
         <!-- 手动输入 -->
         <div class="flex gap-2">
-          <input type="text" id="manual-id-input" placeholder="输入设备ID (如: VD-GJ-031-01)" class="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500">
+          <input type="text" id="manual-id-input" placeholder="输入设备ID (如: VD-GJ-031-01)" class="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
           <button onclick="searchManualId()" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm transition active:scale-95">查询</button>
         </div>
       </div>
 
-      <!-- 💡 数据库真实设备快捷测试通道 -->
+      <!-- 数据库真实设备快捷测试通道 -->
       <div id="test-devices-section" class="bg-amber-50 rounded-2xl p-6 shadow-sm border border-amber-100 space-y-4 hidden">
         <h3 class="text-md font-bold text-amber-800 flex items-center gap-1.5">
           <span>💡</span> 数据库内真实设备 (快捷测试)
@@ -91,7 +94,7 @@
         <p class="text-slate-400 text-sm">正在检索设备信息...</p>
       </div>
 
-      <!-- 优雅的网页端错误提示卡片 -->
+      <!-- 网页端错误提示卡片 -->
       <div id="detail-error" class="hidden bg-white rounded-2xl p-8 shadow-sm border border-rose-100 text-center space-y-4">
         <div class="text-rose-500 text-5xl">❌</div>
         <h3 class="text-lg font-bold text-slate-700">查询设备失败</h3>
@@ -125,45 +128,12 @@
               <p id="device-sn" class="font-semibold text-slate-700">-</p>
             </div>
             <div>
-              <p class="text-slate-400 text-xs">常驻保管人</p>
+              <p class="text-slate-400 text-xs">专属管理员</p>
               <p id="device-owner" class="font-semibold text-slate-700">-</p>
             </div>
             <div>
               <p class="text-slate-400 text-xs">存放位置</p>
               <p id="device-location" class="font-semibold text-slate-700">-</p>
-            </div>
-          </div>
-
-          <div id="device-notes-box" class="p-3 bg-amber-50 rounded-xl text-xs text-amber-700 hidden">
-            <strong>备注提示：</strong> <span id="device-notes"></span>
-          </div>
-
-          <!-- 生成标签按钮 -->
-          <div class="pt-2 border-t border-slate-50">
-            <button onclick="toggleLabelGenerator()" class="w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold flex items-center justify-center gap-1 transition">
-              🏷️ 生成该设备二维码贴纸
-            </button>
-          </div>
-        </div>
-
-        <!-- 标签贴纸预览区域 -->
-        <div id="label-generator-box" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
-          <div class="flex justify-between items-center">
-            <h3 class="text-sm font-bold text-slate-700">设备贴纸预览 (可直接截图)</h3>
-            <button onclick="toggleLabelGenerator()" class="text-xs text-slate-400">收起</button>
-          </div>
-          <div class="border-2 border-dashed border-slate-300 p-4 rounded-xl bg-white flex gap-4 items-center max-w-sm mx-auto shadow-inner">
-            <div class="flex-shrink-0 bg-white p-1 border border-slate-100 rounded-lg">
-              <div id="label-qr-div" class="w-24 h-24"></div>
-            </div>
-            <div class="flex-grow space-y-1 text-xs">
-              <p class="font-black text-sm text-slate-900 leading-tight" id="label-device-name">设备名称</p>
-              <p class="font-mono font-bold text-blue-600" id="label-device-id">ID: -</p>
-              <div class="text-[10px] text-slate-500 space-y-0.5 border-t border-slate-100 pt-1">
-                <p>保管人: <span class="font-semibold text-slate-700" id="label-device-owner">-</span></p>
-                <p>位置: <span class="font-semibold text-slate-700" id="label-device-location">-</span></p>
-              </div>
-              <p class="text-[8px] text-slate-400 pt-1 border-t border-slate-50 text-center">微信扫码一键借还</p>
             </div>
           </div>
         </div>
@@ -173,26 +143,21 @@
           <h3 class="text-lg font-bold text-slate-700">登记借用信息</h3>
           <div class="space-y-3">
             <div>
-              <label class="block text-xs font-bold text-slate-500 mb-1">借用人姓名 <span class="text-rose-500">*</span></label>
-              <input type="text" id="borrower-name" placeholder="请输入借用人真实姓名" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+              <label class="block text-xs font-bold text-slate-500 mb-1">你的姓名 <span class="text-rose-500">*</span></label>
+              <input type="text" id="borrower-name" placeholder="请输入你的真实姓名" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
             </div>
             <div>
               <label class="block text-xs font-bold text-slate-500 mb-1">预计归还日期</label>
               <input type="date" id="expected-return-date" class="w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
             </div>
-            <!-- 新增：管理员密码确认 -->
-            <div>
-              <label class="block text-xs font-bold text-amber-600 mb-1">管理员确认密码 <span class="text-rose-500">*</span></label>
-              <input type="password" id="borrow-admin-pin" placeholder="必须由设备管理员输入确认密码" class="w-full border border-amber-200 bg-amber-50/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500">
-            </div>
             <button onclick="submitBorrow()" class="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
-              ✍️ 管理员确认借出
+              ✍️ 确认借出
             </button>
           </div>
         </div>
 
-        <!-- 归还表单 (已借出时显示) -->
-        <div id="action-return" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
+        <!-- 归还申请表单 (已借出、未申请归还时显示) -->
+        <div id="action-return-request" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
           <h3 class="text-lg font-bold text-slate-700">当前借用状态</h3>
           <div class="p-4 bg-slate-50 rounded-xl space-y-2 text-sm">
             <div class="flex justify-between">
@@ -203,21 +168,43 @@
               <span class="text-slate-400">借出时间：</span>
               <span id="borrow-time-tag" class="font-semibold text-slate-700">-</span>
             </div>
-            <div class="flex justify-between">
-              <span class="text-slate-400">预计归还：</span>
-              <span id="expected-return-tag" class="font-semibold text-rose-600">-</span>
-            </div>
           </div>
-          <!-- 新增：管理员密码确认 -->
-          <div class="space-y-3 pt-2">
-            <div>
-              <label class="block text-xs font-bold text-amber-600 mb-1">管理员确认密码 <span class="text-rose-500">*</span></label>
-              <input type="password" id="return-admin-pin" placeholder="必须由设备管理员输入确认密码" class="w-full border border-amber-200 bg-amber-50/30 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-amber-500">
-            </div>
-            <button onclick="submitReturn()" class="w-full bg-rose-600 hover:bg-rose-700 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
-              🔄 管理员确认归还并入库
-            </button>
-          </div>
+          <button onclick="submitReturnRequest()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
+            🔄 申请归还 (将微信通知管理员确认)
+          </button>
+        </div>
+
+        <!-- 待确认归还状态 (已申请归还，等待管理员确认) -->
+        <div id="action-pending-confirm" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 text-center py-6 space-y-3 hidden">
+          <div class="text-amber-500 text-4xl animate-bounce">⏳</div>
+          <h3 class="text-lg font-bold text-slate-700">已提交归还申请</h3>
+          <p class="text-xs text-slate-400">
+            系统已向管理员 <strong id="pending-owner-name" class="text-slate-700">-</strong> 发送确认通知，请等待管理员确认入库。
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- ================= 页面 4：管理员审批面板 (Admin Panel) ================= -->
+    <div id="view-admin" class="hidden space-y-6">
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
+        <div class="flex justify-between items-center">
+          <h2 class="text-xl font-bold text-slate-700">管理员审批面板</h2>
+          <button onclick="exitAdminPanel()" class="text-xs text-rose-500 font-bold">退出</button>
+        </div>
+        
+        <!-- 管理员身份定位 -->
+        <div class="flex gap-2">
+          <input type="text" id="admin-name-input" placeholder="输入你的管理员姓名 (如: 张三)" class="flex-grow border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none">
+          <button onclick="loadAdminRequests()" class="bg-slate-800 text-white text-xs px-4 py-2.5 rounded-xl font-bold">查询我的待办</button>
+        </div>
+      </div>
+
+      <!-- 待办审批列表 -->
+      <div class="space-y-4">
+        <h3 class="text-sm font-bold text-slate-400 px-1">📥 等待我确认归还的设备</h3>
+        <div id="admin-request-list" class="space-y-3">
+          <p class="text-slate-400 text-center py-8 text-sm bg-white rounded-2xl border border-slate-100">请输入名字并点击查询</p>
         </div>
       </div>
     </div>
@@ -229,9 +216,6 @@
     // 1. 填入你的 Supabase 配置
     let SUPABASE_URL = "https://sslqnzfezflbtccwstkd.supabase.co/rest/v1/";
     const SUPABASE_KEY = "sb_publishable_HoPbeml9qwno-0k0EgBBEQ_epNishVC";
-
-    // 🌟 在这里设置你的管理员确认密码 (可随时修改为你喜欢的数字或字母)
-    const GLOBAL_ADMIN_PIN = "8888"; 
 
     if (SUPABASE_URL.endsWith('/rest/v1/')) {
       SUPABASE_URL = SUPABASE_URL.replace('/rest/v1/', '');
@@ -245,10 +229,7 @@
 
     try {
       if (!window.supabase) {
-        const warnDiv = document.createElement('div');
-        warnDiv.className = "bg-rose-500 text-white text-center py-2 text-xs font-bold sticky top-0 z-[9999]";
-        warnDiv.innerText = "🚨 依赖库加载失败！请检查手机网络。";
-        document.body.insertBefore(warnDiv, document.body.firstChild);
+        alert("🚨 依赖库加载失败！请检查手机网络。");
       } else {
         supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
       }
@@ -256,34 +237,46 @@
       console.error("初始化 Supabase 客户端出错: ", e);
     }
 
+    // 2. 页面生命周期
     window.addEventListener('DOMContentLoaded', () => {
       const urlParams = new URLSearchParams(window.location.search);
       const deviceId = urlParams.get('id');
-      if (deviceId) {
+      const adminName = urlParams.get('admin'); // 支持通过链接直接进入管理员审批
+      
+      if (adminName) {
+        openAdminPanel();
+        document.getElementById('admin-name-input').value = adminName;
+        loadAdminRequests();
+      } else if (deviceId) {
         showDetail(deviceId);
       } else {
         goHome();
       }
     });
 
+    // 3. 回到首页
     function goHome() {
       window.history.replaceState({}, document.title, window.location.pathname);
       document.getElementById('view-home').classList.remove('hidden');
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-detail').classList.add('hidden');
+      document.getElementById('view-admin').classList.add('hidden');
       stopScanner();
       loadRecentLogs();
       loadTestDevices();
     }
 
+    // 4. 展示详情页
     async function showDetail(deviceId) {
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.add('hidden');
+      document.getElementById('view-admin').classList.add('hidden');
       document.getElementById('view-detail').classList.remove('hidden');
+      
       document.getElementById('detail-loading').classList.remove('hidden');
       document.getElementById('detail-content').classList.add('hidden');
       document.getElementById('detail-error').classList.add('hidden');
-      document.getElementById('label-generator-box').classList.add('hidden');
+      
       stopScanner();
 
       if (!supabaseClient) {
@@ -316,6 +309,7 @@
       document.getElementById('detail-error-msg').innerText = msg;
     }
 
+    // 5. 渲染设备详情
     function renderDeviceDetail() {
       document.getElementById('detail-loading').classList.add('hidden');
       document.getElementById('detail-content').classList.remove('hidden');
@@ -328,81 +322,63 @@
       document.getElementById('device-owner').innerText = currentDevice.owner || "暂无";
       document.getElementById('device-location').innerText = currentDevice.location || "暂无";
 
-      if (currentDevice.notes) {
-        document.getElementById('device-notes-box').classList.remove('hidden');
-        document.getElementById('device-notes').innerText = currentDevice.notes;
-      } else {
-        document.getElementById('device-notes-box').classList.add('hidden');
-      }
-
       const statusBadge = document.getElementById('device-status-badge');
       const borrowForm = document.getElementById('action-borrow');
-      const returnForm = document.getElementById('action-return');
+      const returnRequestForm = document.getElementById('action-return-request');
+      const pendingConfirmBox = document.getElementById('action-pending-confirm');
 
-      if (currentDevice.current_borrower) {
+      // 核心业务状态分支：
+      const currentStatus = currentDevice.status || '库房中';
+
+      if (currentStatus === '待确认归还') {
+        // 待确认归还状态
+        statusBadge.innerText = "归还待确认";
+        statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700";
+        
+        borrowForm.classList.add('hidden');
+        returnRequestForm.classList.add('hidden');
+        pendingConfirmBox.classList.remove('hidden');
+        document.getElementById('pending-owner-name').innerText = currentDevice.owner || "暂无";
+
+      } else if (currentDevice.current_borrower) {
+        // 已借出状态
         statusBadge.innerText = "已借出";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700";
+        
         borrowForm.classList.add('hidden');
-        returnForm.classList.remove('hidden');
+        returnRequestForm.classList.remove('hidden');
+        pendingConfirmBox.classList.add('hidden');
 
         document.getElementById('current-borrower-name').innerText = currentDevice.current_borrower;
         document.getElementById('borrow-time-tag').innerText = new Date(currentDevice.borrow_time).toLocaleString('zh-CN');
-        document.getElementById('expected-return-tag').innerText = currentDevice.expected_return_date ? currentDevice.expected_return_date : "未设置";
-        document.getElementById('return-admin-pin').value = ""; // 重置密码框
       } else {
+        // 库房中 (可用)
         statusBadge.innerText = "库房中";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700";
-        borrowForm.classList.remove('hidden');
-        returnForm.classList.add('hidden');
         
-        document.getElementById('borrower-name').value = "";
+        borrowForm.classList.remove('hidden');
+        returnRequestForm.classList.add('hidden');
+        pendingConfirmBox.classList.add('hidden');
+        
+        // 🌟 核心体验优化：从本地缓存自动读取上次输入的名字，免去每次输入的麻烦！
+        const savedName = localStorage.getItem('vd_user_nickname') || "";
+        document.getElementById('borrower-name').value = savedName;
         document.getElementById('expected-return-date').value = "";
-        document.getElementById('borrow-admin-pin').value = ""; // 重置密码框
       }
     }
 
-    function toggleLabelGenerator() {
-      const box = document.getElementById('label-generator-box');
-      if (box.classList.contains('hidden')) {
-        document.getElementById('label-device-name').innerText = currentDevice.name;
-        document.getElementById('label-device-id').innerText = "ID: " + currentDevice.device_id;
-        document.getElementById('label-device-owner').innerText = currentDevice.owner || "暂无";
-        document.getElementById('label-device-location').innerText = currentDevice.location || "暂无";
-        box.classList.remove('hidden');
-
-        const targetUrl = `https://sanshu56.github.io/VD-test-devices/?id=${currentDevice.device_id}`;
-        const qrDiv = document.getElementById('label-qr-div');
-        qrDiv.innerHTML = "";
-        new QRCode(qrDiv, {
-          text: targetUrl,
-          width: 96,
-          height: 96,
-          colorDark : "#0f172a",
-          colorLight : "#ffffff",
-          correctLevel : QRCode.CorrectLevel.H
-        });
-        box.scrollIntoView({ behavior: 'smooth' });
-      } else {
-        box.classList.add('hidden');
-      }
-    }
-
-    // 7. 提交借出登记 (带密码验证)
+    // 6. 提交借出登记
     async function submitBorrow() {
       const borrowerName = document.getElementById('borrower-name').value.trim();
       const expectedReturnDate = document.getElementById('expected-return-date').value;
-      const adminPin = document.getElementById('borrow-admin-pin').value.trim();
 
       if (!borrowerName) {
-        alert("请输入借用人姓名！");
+        alert("请输入你的姓名！");
         return;
       }
-      
-      // 验证管理员确认密码
-      if (adminPin !== GLOBAL_ADMIN_PIN) {
-        alert("❌ 管理员确认密码不正确，无法登记借出！");
-        return;
-      }
+
+      // 🌟 保存名字到本地浏览器缓存中，下次打开自动填好！
+      localStorage.setItem('vd_user_nickname', borrowerName);
 
       const borrowTime = new Date().toISOString();
 
@@ -412,7 +388,8 @@
           .update({
             current_borrower: borrowerName,
             borrow_time: borrowTime,
-            expected_return_date: expectedReturnDate || null
+            expected_return_date: expectedReturnDate || null,
+            status: '已借出'
           })
           .eq('device_id', currentDevice.device_id);
 
@@ -424,54 +401,152 @@
             device_id: currentDevice.device_id,
             borrower_name: borrowerName,
             action_type: 'borrow',
-            expected_return_date: expectedReturnDate || null,
-            notes: currentDevice.notes
+            expected_return_date: expectedReturnDate || null
           });
 
-        alert(`登记成功！设备已借出给：${borrowerName}`);
+        alert(`登记成功！你已成功借出设备。`);
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("登记失败: " + err.message);
       }
     }
 
-    // 8. 提交归还登记 (带密码验证)
-    async function submitReturn() {
-      const formerBorrower = currentDevice.current_borrower;
-      const adminPin = document.getElementById('return-admin-pin').value.trim();
-
-      // 验证管理员确认密码
-      if (adminPin !== GLOBAL_ADMIN_PIN) {
-        alert("❌ 管理员确认密码不正确，无法登记归还！");
-        return;
-      }
-
+    // 7. 员工提交：申请归还（触发微信推送给管理员）
+    async function submitReturnRequest() {
+      const borrower = currentDevice.current_borrower;
+      
       try {
+        // a. 更新设备表状态为“待确认归还”
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({
-            current_borrower: null,
-            borrow_time: null,
-            expected_return_date: null
+            status: '待确认归还'
           })
           .eq('device_id', currentDevice.device_id);
 
         if (devError) throw devError;
 
+        // b. 🚀 微信远程推送逻辑 (如果配置了 admin_push_key)
+        if (currentDevice.admin_push_key) {
+          const adminUrl = `https://sanshu56.github.io/VD-test-devices/?admin=${encodeURIComponent(currentDevice.owner)}`;
+          const title = `🚨 设备归还确认申请`;
+          const desp = `### 申请详情\n` +
+                       `* **设备名称**：${currentDevice.name}\n` +
+                       `* **设备 ID**：${currentDevice.device_id}\n` +
+                       `* **借用人员**：${borrower}\n` +
+                       `* **保管管理员**：${currentDevice.owner}\n\n` +
+                       `[👉 点击此处一键确认归还](${adminUrl})`;
+
+          // 调用 Server酱 免费微信推送接口
+          const pushUrl = `https://sctapi.ftqq.com/${currentDevice.admin_push_key}.send`;
+          
+          // 异步发送，不阻塞页面逻辑
+          fetch(pushUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(desp)}`
+          }).then(res => console.log('微信推送成功'))
+            .catch(err => console.error('微信推送失败', err));
+        }
+
+        alert("归还申请提交成功！已通过微信通知管理员确认。");
+        showDetail(currentDevice.device_id);
+      } catch (err) {
+        alert("申请归还失败: " + err.message);
+      }
+    }
+
+    // ================= 管理员面板逻辑 =================
+
+    function openAdminPanel() {
+      document.getElementById('view-home').classList.add('hidden');
+      document.getElementById('view-scanner').classList.add('hidden');
+      document.getElementById('view-detail').classList.add('hidden');
+      document.getElementById('view-admin').classList.remove('hidden');
+      stopScanner();
+    }
+
+    function exitAdminPanel() {
+      goHome();
+    }
+
+    // 加载专属我的待处理归还申请
+    async function loadAdminRequests() {
+      const adminName = document.getElementById('admin-name-input').value.trim();
+      const listContainer = document.getElementById('admin-request-list');
+
+      if (!adminName) {
+        alert("请输入你的名字！");
+        return;
+      }
+
+      listContainer.innerHTML = `<p class="text-slate-400 text-center py-8">正在检索属于你的待办...</p>`;
+
+      try {
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('*')
+          .eq('owner', adminName)
+          .eq('status', '待确认归还');
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          listContainer.innerHTML = `<p class="text-slate-400 text-center py-8 text-sm bg-white rounded-2xl border border-slate-100">🎉 暂无待确认的归还申请</p>`;
+          return;
+        }
+
+        listContainer.innerHTML = data.map(dev => `
+          <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center">
+            <div class="space-y-1">
+              <h4 class="font-bold text-slate-800 text-sm">${dev.name}</h4>
+              <p class="text-xs text-slate-400">ID: ${dev.device_id} · 借用人: <strong class="text-slate-600">${dev.current_borrower}</strong></p>
+            </div>
+            <button onclick="approveReturn('${dev.device_id}', '${dev.current_borrower}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 shadow-sm">
+              确认入库
+            </button>
+          </div>
+        `).join('');
+      } catch (err) {
+        listContainer.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">加载失败: ${err.message}</p>`;
+      }
+    }
+
+    // 管理员点击：确认归还入库
+    async function approveReturn(deviceId, borrower) {
+      if (!confirm(`确认设备 ${deviceId} 已安全入库吗？`)) return;
+
+      try {
+        // a. 清空设备表借用信息
+        const { error: devError } = await supabaseClient
+          .from('devices')
+          .update({
+            current_borrower: null,
+            borrow_time: null,
+            expected_return_date: null,
+            status: '库房中'
+          })
+          .eq('device_id', deviceId);
+
+        if (devError) throw devError;
+
+        // b. 插入归还日志
         await supabaseClient
           .from('borrow_logs')
           .insert({
-            device_id: currentDevice.device_id,
-            borrower_name: formerBorrower,
+            device_id: deviceId,
+            borrower_name: borrower,
             action_type: 'return'
           });
 
-        alert("归还登记成功！设备已安全入库。");
-        showDetail(currentDevice.device_id);
+        alert("设备入库成功！");
+        loadAdminRequests(); // 刷新列表
       } catch (err) {
-        alert("归还失败: " + err.message);
+        alert("确认入库失败: " + err.message);
       }
     }
+
+    // ================= 辅助/扫码逻辑 =================
 
     async function loadRecentLogs() {
       const container = document.getElementById('recent-logs');
