@@ -20,12 +20,12 @@
   <!-- 顶部导航栏 -->
   <header class="bg-blue-600 text-white shadow-md py-4 px-4 sticky top-0 z-50">
     <div class="max-w-md mx-auto flex justify-between items-center">
-      <h1 class="text-lg font-bold tracking-wider flex items-center gap-2" onclick="goHome()">
+      <h1 class="text-lg font-bold tracking-wider flex items-center gap-2 cursor-pointer" onclick="goHome()">
         <span>🚙</span> VD测试设备管理系统
       </h1>
       <div class="flex gap-2">
         <button onclick="openAdminPanel()" class="text-xs bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-lg transition">管理员面板</button>
-        <button onclick="goHome()" class="text-xs bg-blue-500 hover:bg-blue-700 px-2.5 py-1.5 rounded-lg transition">首页</button>
+        <button onclick="goHome()" class="text-xs bg-blue-500 hover:bg-blue-750 px-2.5 py-1.5 rounded-lg transition">首页</button>
       </div>
     </div>
   </header>
@@ -53,7 +53,7 @@
 
         <!-- 智能搜索输入 -->
         <div class="flex gap-2">
-          <input type="text" id="manual-id-input" placeholder="输入设备名称、分类或ID (如: 平板)" class="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+          <input type="text" id="manual-id-input" placeholder="输入设备名称、分类、系统或ID" class="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
           <button onclick="searchManualId()" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm transition active:scale-95">搜索</button>
         </div>
       </div>
@@ -164,6 +164,11 @@
             </div>
           </div>
 
+          <!-- 系统关联关系展示区 -->
+          <div id="system-relation-box" class="p-4 bg-blue-50 rounded-xl border border-blue-100 text-xs text-slate-700 space-y-2 hidden">
+            <!-- 动态渲染系统组件或父级系统信息 -->
+          </div>
+
           <!-- ✏️ 编辑按钮入口 -->
           <div class="flex justify-end pt-3 border-t border-slate-100 mt-2">
             <button onclick="enterEditMode()" class="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 transition">
@@ -174,7 +179,7 @@
 
         <!-- 借用表单 (未借出时显示) -->
         <div id="action-borrow" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
-          <h3 class="text-lg font-bold text-slate-700">登记借用信息</h3>
+          <h3 id="borrow-form-title" class="text-lg font-bold text-slate-700">登记借用信息</h3>
           <div class="space-y-3">
             <div>
               <label class="block text-xs font-bold text-slate-500 mb-1">你的姓名 <span class="text-rose-500">*</span></label>
@@ -204,7 +209,7 @@
             </div>
           </div>
           <button onclick="submitReturnRequest()" class="w-full bg-amber-500 hover:bg-amber-600 text-white font-semibold py-3.5 rounded-xl shadow-md transition active:scale-95">
-            🔄 申请归还 (将微信通知管理员确认)
+            🔄 申请归还 (提交给管理员确认)
           </button>
         </div>
 
@@ -213,8 +218,20 @@
           <div class="text-amber-500 text-4xl animate-bounce">⏳</div>
           <h3 class="text-lg font-bold text-slate-700">已提交归还申请</h3>
           <p class="text-xs text-slate-400">
-            系统已向管理员 <strong id="pending-owner-name" class="text-slate-700">-</strong> 发送确认通知，请等待管理员确认入库。
+            系统已提交归还申请，请联系保管管理员 <strong id="pending-owner-name" class="text-slate-700">-</strong> 在系统中确认入库。
           </p>
+        </div>
+
+        <!-- 系统锁定状态 (当单体设备随系统借出时显示) -->
+        <div id="action-system-locked" class="bg-white rounded-2xl p-6 shadow-sm border border-blue-100 text-center py-6 space-y-3 hidden">
+          <div class="text-blue-500 text-4xl">🔒</div>
+          <h3 class="text-lg font-bold text-slate-700">单体设备已被系统锁定</h3>
+          <p class="text-xs text-slate-400 leading-relaxed">
+            该设备属于系统 <strong id="locked-parent-name" class="text-blue-600">-</strong> 整体。当前该系统已被借出，子设备处于锁定状态，不支持单独操作借还。
+          </p>
+          <button id="btn-go-parent-system" class="text-xs text-blue-600 font-bold hover:underline">
+            👉 查看关联系统整体详情
+          </button>
         </div>
 
         <!-- 设备损坏状态 (已坏时显示) -->
@@ -294,6 +311,24 @@
         <h3 class="text-sm font-bold text-slate-400 px-1">📥 等待我确认归还的设备</h3>
         <div id="admin-request-list" class="space-y-3">
           <p class="text-slate-400 text-center py-8 text-sm bg-white rounded-2xl border border-slate-100">请输入名字并点击查询</p>
+        </div>
+      </div>
+
+      <!-- 数据备份管理板块 -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
+        <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5">
+          <span>💾</span> 数据备份管理
+        </h3>
+        <p class="text-xs text-slate-400 leading-relaxed">
+          管理员可以随时在这里一键导出最新数据，手动上传至您的公司网盘。
+        </p>
+        <div class="grid grid-cols-2 gap-2">
+          <button onclick="exportTableData('devices')" class="bg-blue-50 text-blue-600 hover:bg-blue-100 text-xs font-bold py-2.5 px-3 rounded-xl transition active:scale-95 border border-blue-100">
+            📥 导出设备列表 (JSON)
+          </button>
+          <button onclick="exportTableData('borrow_logs')" class="bg-emerald-50 text-emerald-600 hover:bg-emerald-100 text-xs font-bold py-2.5 px-3 rounded-xl transition active:scale-95 border border-emerald-100">
+            📥 导出借还日志 (JSON)
+          </button>
         </div>
       </div>
     </div>
@@ -488,6 +523,7 @@
       }
       
       try {
+        // 1. 获取设备本身信息
         const { data, error } = await supabaseClient
           .from('devices')
           .select('*')
@@ -498,6 +534,32 @@
         if (!data) throw new Error(`未找到该设备。\n\n扫码 ID: "${deviceId}"\n请确认该 ID 是否已录入系统！`);
         
         currentDevice = data;
+
+        // 2. 智能链条判定：如果是子设备，获取其主系统设备状态
+        currentDevice.parentDevice = null;
+        if (currentDevice.parent_system_id) {
+          const { data: parentData } = await supabaseClient
+            .from('devices')
+            .select('*')
+            .eq('device_id', currentDevice.parent_system_id)
+            .maybeSingle();
+          if (parentData) {
+            currentDevice.parentDevice = parentData;
+          }
+        }
+
+        // 3. 智能链条判定：如果是系统主设备，获取其下所有子设备
+        currentDevice.subDevices = [];
+        if (currentDevice.is_system) {
+          const { data: subData } = await supabaseClient
+            .from('devices')
+            .select('*')
+            .eq('parent_system_id', deviceId);
+          if (subData) {
+            currentDevice.subDevices = subData;
+          }
+        }
+        
         renderDeviceDetail();
       } catch (err) {
         showErrorState(err.message);
@@ -529,17 +591,63 @@
       const borrowForm = document.getElementById('action-borrow');
       const returnRequestForm = document.getElementById('action-return-request');
       const pendingConfirmBox = document.getElementById('action-pending-confirm');
+      const systemLockedBox = document.getElementById('action-system-locked');
       const damagedBox = document.getElementById('action-damaged');
+      const relationBox = document.getElementById('system-relation-box');
 
       const currentStatus = getDeviceStatus(currentDevice);
 
-      // 隐藏所有操作表单
+      // 隐藏所有操作表单和锁定框
       borrowForm.classList.add('hidden');
       returnRequestForm.classList.add('hidden');
       pendingConfirmBox.classList.add('hidden');
+      systemLockedBox.classList.add('hidden');
+      relationBox.classList.add('hidden');
       if (damagedBox) damagedBox.classList.add('hidden');
 
-      if (currentStatus === '待确认归还') {
+      // 渲染系统关联关系展示
+      if (currentDevice.parent_system_id && currentDevice.parentDevice) {
+        relationBox.classList.remove('hidden');
+        const pStatus = getDeviceStatus(currentDevice.parentDevice);
+        relationBox.innerHTML = `
+          <div class="flex items-center gap-1.5 font-bold text-blue-800">
+            <span>🔗</span> 属于系统整体：${currentDevice.parentDevice.name}
+          </div>
+          <p class="text-[11px] text-slate-500">当前系统整体状态：<span class="font-semibold text-blue-600">${pStatus}</span></p>
+        `;
+      } else if (currentDevice.is_system && currentDevice.subDevices && currentDevice.subDevices.length > 0) {
+        relationBox.classList.remove('hidden');
+        const subListHtml = currentDevice.subDevices.map(sub => {
+          const sStatus = getDeviceStatus(sub);
+          let color = 'text-slate-600';
+          if (sStatus === '已借出' || sStatus === '待确认归还') color = 'text-rose-600 font-medium';
+          return `<li class="ml-4 list-disc text-[11px] ${color}">${sub.name} (ID: ${sub.device_id}) - ${sStatus}</li>`;
+        }).join('');
+        relationBox.innerHTML = `
+          <div class="flex items-center gap-1.5 font-bold text-blue-800">
+            <span>📂</span> 系统包含组件清单 (${currentDevice.subDevices.length} 个)
+          </div>
+          <ul class="space-y-0.5">${subListHtml}</ul>
+        `;
+      }
+
+      // 检查当前子设备是否随父系统借出并锁定
+      let isLockedBySystem = false;
+      if (currentDevice.parent_system_id && currentDevice.parentDevice) {
+        const pStatus = getDeviceStatus(currentDevice.parentDevice);
+        if (pStatus === '已借出' || pStatus === '待确认归还') {
+          isLockedBySystem = true;
+        }
+      }
+
+      if (isLockedBySystem) {
+        // 系统锁定状态
+        statusBadge.innerText = "随系统借出";
+        statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-blue-100 text-blue-700";
+        systemLockedBox.classList.remove('hidden');
+        document.getElementById('locked-parent-name').innerText = currentDevice.parentDevice.name;
+        document.getElementById('btn-go-parent-system').onclick = () => showDetail(currentDevice.parent_system_id);
+      } else if (currentStatus === '待确认归还') {
         statusBadge.innerText = "归还待确认";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700";
         pendingConfirmBox.classList.remove('hidden');
@@ -559,6 +667,15 @@
         statusBadge.innerText = "库房中";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700";
         borrowForm.classList.remove('hidden');
+        
+        // 动态修改表单标题以明确借出类型
+        const titleEl = document.getElementById('borrow-form-title');
+        if (currentDevice.is_system) {
+          titleEl.innerText = "登记借用信息 (整套系统级借出)";
+        } else {
+          titleEl.innerText = "登记借用信息";
+        }
+
         const savedName = localStorage.getItem('vd_user_nickname') || "";
         document.getElementById('borrower-name').value = savedName;
         document.getElementById('expected-return-date').value = "";
@@ -685,6 +802,19 @@
 
         if (error) throw error;
 
+        // 智能级联：如果是系统主设备，且状态修改为“已坏/库房中”，自动清理其关联的所有子设备
+        if (currentDevice.is_system && (status === '库房中' || status === '已坏')) {
+          await supabaseClient
+            .from('devices')
+            .update({
+              status: status,
+              current_borrower: null,
+              borrow_time: null,
+              expected_return_date: null
+            })
+            .eq('parent_system_id', currentDevice.device_id);
+        }
+
         alert("🎉 设备信息更新成功！");
         document.getElementById('detail-edit-form').classList.add('hidden');
         showDetail(currentDevice.device_id); // 刷新详情页展示最新数据
@@ -707,6 +837,7 @@
       const borrowTime = new Date().toISOString();
 
       try {
+        // 1. 登记主设备借出
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({
@@ -719,6 +850,7 @@
 
         if (devError) throw devError;
 
+        // 2. 写入主设备借还日志
         await supabaseClient
           .from('borrow_logs')
           .insert({
@@ -728,18 +860,32 @@
             expected_return_date: expectedReturnDate || null
           });
 
-        alert(`登记成功！你已成功借出设备。`);
+        // 3. 智能级联：如果是系统级借出，自动将其子设备全部更新为借出状态
+        if (currentDevice.is_system) {
+          const { error: subError } = await supabaseClient
+            .from('devices')
+            .update({
+              current_borrower: borrowerName,
+              borrow_time: borrowTime,
+              expected_return_date: expectedReturnDate || null,
+              status: '已借出'
+            })
+            .eq('parent_system_id', currentDevice.device_id);
+
+          if (subError) throw subError;
+        }
+
+        alert(`登记成功！你已成功借出设备${currentDevice.is_system ? '（整套系统）' : ''}。`);
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("登记失败: " + err.message);
       }
     }
 
-    // 员工提交：申请归还（微信推送）
+    // 员工提交：申请归还（彻底移除了微信通知功能）
     async function submitReturnRequest() {
-      const borrower = currentDevice.current_borrower;
-      
       try {
+        // 1. 申请主设备归还
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({ status: '待确认归还' })
@@ -747,26 +893,17 @@
 
         if (devError) throw devError;
 
-        if (currentDevice.admin_push_key) {
-          const adminUrl = `https://sanshu56.github.io/VD-test-devices/?admin=${encodeURIComponent(currentDevice.owner)}`;
-          const title = `🚨 设备归还确认申请`;
-          const desp = `### 申请详情\n` +
-                       `* **设备名称**：${currentDevice.name}\n` +
-                       `* **设备 ID**：${currentDevice.device_id}\n` +
-                       `* **借用人员**：${borrower}\n` +
-                       `* **保管管理员**：${currentDevice.owner}\n\n` +
-                       `[👉 点击此处一键确认归还](${adminUrl})`;
+        // 2. 智能级联：如果归还是系统整体，自动将其子设备全部更新为待确认归还状态
+        if (currentDevice.is_system) {
+          const { error: subError } = await supabaseClient
+            .from('devices')
+            .update({ status: '待确认归还' })
+            .eq('parent_system_id', currentDevice.device_id);
 
-          const pushUrl = `https://sctapi.ftqq.com/${currentDevice.admin_push_key}.send`;
-          fetch(pushUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(desp)}`
-          }).then(res => console.log('微信推送成功'))
-            .catch(err => console.error('微信推送失败', err));
+          if (subError) throw subError;
         }
 
-        alert("归还申请提交成功！已通过微信通知管理员确认。");
+        alert("归还申请提交成功！请联系管理员确认入库。");
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("申请归还失败: " + err.message);
@@ -828,11 +965,13 @@
           else if (status === '已坏') badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
           else badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
 
+          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+
           return `
             <div onclick="showDetail('${dev.device_id}')" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm cursor-pointer transition active:scale-[0.98]">
               <div class="flex justify-between items-start gap-2">
                 <div>
-                  <h4 class="font-bold text-slate-800">${dev.name}</h4>
+                  <h4 class="font-bold text-slate-800 flex items-center gap-1">${dev.name} ${sysTag}</h4>
                   <p class="text-[10px] font-mono text-slate-400">ID: ${dev.device_id} | 分类: ${dev.category || '暂无'}</p>
                 </div>
                 <span class="px-2 py-0.5 text-[9px] font-bold border rounded-full ${badgeColor}">${status}</span>
@@ -963,6 +1102,8 @@
             relationshipInfo = `<p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>`;
           }
 
+          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+
           if (status === '待确认归还') {
             badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
             statusText = "待确认归还";
@@ -1000,7 +1141,7 @@
             statusText = "库房中";
           }
 
-          const borrowTimeStr = (status === '...已借出' || status === '待确认归还') && dev.borrow_time
+          const borrowTimeStr = (status === '已借出' || status === '待确认归还') && dev.borrow_time
             ? `<p class="text-[10px] text-slate-400 mt-1">⏰ 借用时间: ${new Date(dev.borrow_time).toLocaleString('zh-CN')}</p>`
             : '';
 
@@ -1008,7 +1149,7 @@
             <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm">
               <div class="flex justify-between items-start gap-2">
                 <div onclick="showDetail('${dev.device_id}')" class="cursor-pointer flex-grow">
-                  <h4 class="font-bold text-slate-800 hover:text-blue-600 transition">${dev.name}</h4>
+                  <h4 class="font-bold text-slate-800 hover:text-blue-600 transition flex items-center gap-1">${dev.name} ${sysTag}</h4>
                   <p class="text-[10px] font-mono text-slate-400">ID: ${dev.device_id}</p>
                 </div>
                 <span class="px-2 py-0.5 text-[9px] font-bold border rounded-full ${badgeColor}">${statusText}</span>
@@ -1173,9 +1314,9 @@
       }
     }
 
-    // 借用人在查询列表中直接一键申请归还，并发送微信推送给保管管理员
+    // 借用人在查询列表中直接一键申请归还（彻底移除了微信通知功能）
     async function requestReturnFromQuery(deviceId) {
-      if (!confirm("确定要申请归还该设备吗？\n系统将自动通知保管管理员确认。")) return;
+      if (!confirm("确定要申请归还该设备吗？\n系统将自动提交给保管管理员确认。")) return;
       
       try {
         const { data: dev, error: fetchErr } = await supabaseClient
@@ -1193,6 +1334,7 @@
           return;
         }
 
+        // 1. 提交主设备归还申请
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({ status: '待确认归还' })
@@ -1200,26 +1342,17 @@
 
         if (devError) throw devError;
 
-        if (dev.admin_push_key) {
-          const adminUrl = `https://sanshu56.github.io/VD-test-devices/?admin=${encodeURIComponent(dev.owner)}`;
-          const title = `🚨 设备归还确认申请`;
-          const desp = `### 申请详情\n` +
-                       `* **设备名称**：${dev.name}\n` +
-                       `* **设备 ID**：${dev.device_id}\n` +
-                       `* **借用人员**：${borrower}\n` +
-                       `* **保管管理员**：${dev.owner}\n\n` +
-                       `[👉 点击此处一键确认归还](${adminUrl})`;
+        // 2. 智能级联：如果是系统整体，自动更新其子设备
+        if (dev.is_system) {
+          const { error: subError } = await supabaseClient
+            .from('devices')
+            .update({ status: '待确认归还' })
+            .eq('parent_system_id', deviceId);
 
-          const pushUrl = `https://sctapi.ftqq.com/${dev.admin_push_key}.send`;
-          fetch(pushUrl, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-            body: `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(desp)}`
-          }).then(res => console.log('微信推送成功'))
-            .catch(err => console.error('微信推送失败', err));
+          if (subError) throw subError;
         }
 
-        alert("🎉 归还申请提交成功！已自动微信通知管理员。");
+        alert("🎉 归还申请提交成功！请联系管理员在系统中确认。");
         runListQuery();
         loadRecentLogs();
       } catch (err) {
@@ -1271,17 +1404,20 @@
           return;
         }
 
-        listContainer.innerHTML = data.map(dev => `
-          <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center text-left">
-            <div class="space-y-1">
-              <h4 class="font-bold text-slate-800 text-sm">${dev.name}</h4>
-              <p class="text-xs text-slate-400">ID: ${dev.device_id} · 借用人: <strong class="text-slate-600">${dev.current_borrower}</strong></p>
+        listContainer.innerHTML = data.map(dev => {
+          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+          return `
+            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center text-left">
+              <div class="space-y-1">
+                <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1">${dev.name} ${sysTag}</h4>
+                <p class="text-xs text-slate-400">ID: ${dev.device_id} · 借用人: <strong class="text-slate-600">${dev.current_borrower}</strong></p>
+              </div>
+              <button onclick="approveReturn('${dev.device_id}', '${dev.current_borrower}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 shadow-sm">
+                确认入库
+              </button>
             </div>
-            <button onclick="approveReturn('${dev.device_id}', '${dev.current_borrower}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 shadow-sm">
-              确认入库
-            </button>
-          </div>
-        `).join('');
+          `;
+        }).join('');
       } catch (err) {
         listContainer.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">加载失败: ${err.message}</p>`;
       }
@@ -1295,7 +1431,7 @@
       if (pin) {
         const { data, error } = await supabaseClient
           .from('devices')
-          .select('device_id')
+          .select('device_id, is_system')
           .eq('device_id', deviceId)
           .eq('admin_pin', pin);
         
@@ -1316,7 +1452,7 @@
 
         const { data, error } = await supabaseClient
           .from('devices')
-          .select('device_id')
+          .select('device_id, is_system')
           .eq('device_id', deviceId)
           .eq('admin_pin', pin);
 
@@ -1329,6 +1465,16 @@
       }
 
       try {
+        // 先获取该设备本身的系统属性
+        const { data: devInfo, error: fetchErr } = await supabaseClient
+          .from('devices')
+          .select('is_system')
+          .eq('device_id', deviceId)
+          .single();
+
+        if (fetchErr) throw fetchErr;
+
+        // 1. 更新主设备状态回库房
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({
@@ -1341,6 +1487,7 @@
 
         if (devError) throw devError;
 
+        // 2. 写入借归还日志
         await supabaseClient
           .from('borrow_logs')
           .insert({
@@ -1348,6 +1495,21 @@
             borrower_name: borrower,
             action_type: 'return'
           });
+
+        // 3. 智能级联：如果是系统整体确认归还，则将其下的所有子设备也一同自动归还入库
+        if (devInfo && devInfo.is_system) {
+          const { error: subError } = await supabaseClient
+            .from('devices')
+            .update({
+              current_borrower: null,
+              borrow_time: null,
+              expected_return_date: null,
+              status: '库房中'
+            })
+            .eq('parent_system_id', deviceId);
+
+          if (subError) throw subError;
+        }
 
         alert("🎉 确认成功！设备已安全归还并入库。");
 
@@ -1364,6 +1526,36 @@
         loadRecentLogs();
       } catch (err) {
         alert("确认入库失败: " + err.message);
+      }
+    }
+
+    // ================= 数据一键导出（备份）逻辑 =================
+    async function exportTableData(tableName) {
+      if (!supabaseClient) {
+        alert("数据库未连接就绪！");
+        return;
+      }
+      try {
+        const { data, error } = await supabaseClient
+          .from(tableName)
+          .select('*');
+
+        if (error) throw error;
+
+        // 生成 JSON 文件并触发下载
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(data, null, 2));
+        const downloadAnchor = document.createElement('a');
+        const dateStr = new Date().toISOString().split('T')[0];
+        
+        downloadAnchor.setAttribute("href", dataStr);
+        downloadAnchor.setAttribute("download", `VD_Backup_${tableName}_${dateStr}.json`);
+        document.body.appendChild(downloadAnchor);
+        downloadAnchor.click();
+        downloadAnchor.remove();
+        
+        alert(`🎉 备份文件 [${tableName}] 导出成功！请将其手动拖入公司网盘。`);
+      } catch (err) {
+        alert("备份导出失败: " + err.message);
       }
     }
 
@@ -1451,6 +1643,3 @@
   </script>
 </body>
 </html>
-
-Rewrite
-
