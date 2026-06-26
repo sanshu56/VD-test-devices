@@ -88,7 +88,7 @@
         </div>
       </div>
 
-      <!-- 💡 数据库真实设备快捷测试通道 -->
+      <!-- 数据库真实设备快捷测试通道 -->
       <div id="test-devices-section" class="bg-amber-50 rounded-2xl p-6 shadow-sm border border-amber-100 space-y-4 hidden">
         <h3 class="text-md font-bold text-amber-800 flex items-center gap-1.5">
           <span>💡</span> 数据库内真实设备 (快捷测试)
@@ -214,6 +214,15 @@
             系统已向管理员 <strong id="pending-owner-name" class="text-slate-700">-</strong> 发送确认通知，请等待管理员确认入库。
           </p>
         </div>
+
+        <!-- 设备损坏状态 (已坏时显示) -->
+        <div id="action-damaged" class="bg-white rounded-2xl p-6 shadow-sm border border-rose-100 text-center py-6 space-y-3 hidden">
+          <div class="text-rose-500 text-4xl">🛠️</div>
+          <h3 class="text-lg font-bold text-slate-700">设备已损坏</h3>
+          <p class="text-xs text-slate-400">
+            该设备当前状态为 <strong class="text-rose-600">已坏</strong>，暂不支持借用。请联系保管管理员处理。
+          </p>
+        </div>
       </div>
     </div>
 
@@ -245,7 +254,7 @@
 
   <!-- ================= 核心 JavaScript 逻辑 ================= -->
   <script>
-    // 1. 填入你的 Supabase 配置
+    // 1. Supabase 配置
     let SUPABASE_URL = "https://sslqnzfezflbtccwstkd.supabase.co/rest/v1/";
     const SUPABASE_KEY = "sb_publishable_HoPbeml9qwno-0k0EgBBEQ_epNishVC";
 
@@ -258,7 +267,20 @@
     let supabaseClient = null;
     let currentDevice = null;
     let html5QrScanner = null;
-    let activeQueryTab = 'admin';
+    let activeQueryTab = 'admin'; // 'admin' 或 'borrower'
+
+    // 智能统一状态判定方法
+    function getDeviceStatus(dev) {
+      if (!dev) return '库房中';
+      let status = dev.status || '库房中';
+      if (status === '可用') status = '库房中';
+      
+      // 容错处理：如果状态是库房中，但存在借用人，则实质上是已借出
+      if (status === '库房中' && dev.current_borrower) {
+        status = '已借出';
+      }
+      return status;
+    }
 
     // 智能 CDN 自动避让与重试加载函数
     function loadScriptPromise(urls) {
@@ -358,6 +380,8 @@
       }
 
       showGlobalLoading(false);
+
+      // 初始化查询列表的默认 Tab 状态
       switchQueryTab('admin');
 
       const urlParams = new URLSearchParams(window.location.search);
@@ -386,6 +410,7 @@
       loadRecentLogs();
       loadTestDevices();
       
+      // 刷新当前的查询列表
       if (!document.getElementById('query-results-box').classList.contains('hidden')) {
         runListQuery();
       }
@@ -451,30 +476,36 @@
       const borrowForm = document.getElementById('action-borrow');
       const returnRequestForm = document.getElementById('action-return-request');
       const pendingConfirmBox = document.getElementById('action-pending-confirm');
+      const damagedBox = document.getElementById('action-damaged');
 
-      const currentStatus = currentDevice.status || '库房中';
+      const currentStatus = getDeviceStatus(currentDevice);
+
+      // 隐藏所有操作表单
+      borrowForm.classList.add('hidden');
+      returnRequestForm.classList.add('hidden');
+      pendingConfirmBox.classList.add('hidden');
+      if (damagedBox) damagedBox.classList.add('hidden');
 
       if (currentStatus === '待确认归还') {
         statusBadge.innerText = "归还待确认";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-amber-100 text-amber-700";
-        borrowForm.classList.add('hidden');
-        returnRequestForm.classList.add('hidden');
         pendingConfirmBox.classList.remove('hidden');
         document.getElementById('pending-owner-name').innerText = currentDevice.owner || "暂无";
-      } else if (currentDevice.current_borrower) {
+      } else if (currentStatus === '已借出') {
         statusBadge.innerText = "已借出";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700";
-        borrowForm.classList.add('hidden');
         returnRequestForm.classList.remove('hidden');
-        pendingConfirmBox.classList.add('hidden');
-        document.getElementById('current-borrower-name').innerText = currentDevice.current_borrower;
-        document.getElementById('borrow-time-tag').innerText = new Date(currentDevice.borrow_time).toLocaleString('zh-CN');
+        document.getElementById('current-borrower-name').innerText = currentDevice.current_borrower || "未知";
+        document.getElementById('borrow-time-tag').innerText = currentDevice.borrow_time ? new Date(currentDevice.borrow_time).toLocaleString('zh-CN') : "暂无";
+      } else if (currentStatus === '已坏') {
+        statusBadge.innerText = "已坏";
+        statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-rose-100 text-rose-700";
+        if (damagedBox) damagedBox.classList.remove('hidden');
       } else {
+        // 库房中
         statusBadge.innerText = "库房中";
         statusBadge.className = "absolute top-4 right-4 px-3 py-1 rounded-full text-xs font-bold bg-emerald-100 text-emerald-700";
         borrowForm.classList.remove('hidden');
-        returnRequestForm.classList.add('hidden');
-        pendingConfirmBox.classList.add('hidden');
         const savedName = localStorage.getItem('vd_user_nickname') || "";
         document.getElementById('borrower-name').value = savedName;
         document.getElementById('expected-return-date').value = "";
@@ -561,7 +592,7 @@
       }
     }
 
-    // ================= 清单查询交互及智能排序逻辑 =================
+    // ================= 清单查询交互逻辑 =================
 
     // 切换查询标签页
     function switchQueryTab(tab) {
@@ -571,6 +602,7 @@
       const input = document.getElementById('query-name-input');
       const resultsBox = document.getElementById('query-results-box');
 
+      // 清空上次查询结果
       resultsBox.classList.add('hidden');
       document.getElementById('query-results-list').innerHTML = '';
 
@@ -587,7 +619,7 @@
       }
     }
 
-    // 执行设备清单查询（带智能优先级排序）
+    // 执行设备清单查询
     async function runListQuery() {
       const name = document.getElementById('query-name-input').value.trim();
       const resultsBox = document.getElementById('query-results-box');
@@ -606,6 +638,7 @@
         let error = null;
 
         if (activeQueryTab === 'admin') {
+          // 记住管理员名字
           localStorage.setItem('vd_query_admin_name', name);
           const res = await supabaseClient
             .from('devices')
@@ -614,6 +647,7 @@
           data = res.data;
           error = res.error;
         } else {
+          // 记住借用人名字
           localStorage.setItem('vd_query_borrower_name', name);
           const res = await supabaseClient
             .from('devices')
@@ -630,54 +664,84 @@
           return;
         }
 
-        // 🌟 核心升级：智能多级排序
-        // 1. 待确认归还 (权重 1) 排最前
-        // 2. 已借出 (权重 2) 排中间
-        // 3. 库房中 (权重 3) 排最后
-        // 4. 同等状态下，按设备 ID 升序排列
+        // 定义状态排序权重
+        // 1. 待确认归还 (1) -> 最上面
+        // 2. 已借出 (2) -> 中间
+        // 3. 库房中 (3) -> 中下
+        // 4. 已坏 (4) -> 最下面
+        const statusWeight = {
+          '待确认归还': 1,
+          '已借出': 2,
+          '库房中': 3,
+          '已坏': 4
+        };
+
+        // 按状态权重升序排列，权重相同按 ID 排序
         data.sort((a, b) => {
-          const getWeight = (item) => {
-            const status = item.status || '库房中';
-            if (status === '待确认归还') return 1;
-            if (item.current_borrower || status === '已借出') return 2;
-            return 3;
-          };
-
-          const weightA = getWeight(a);
-          const weightB = getWeight(b);
-
-          if (weightA !== weightB) {
-            return weightA - weightB; // 升序，1 最小，排最前
-          }
-          // 权重相同，按 ID 升序
+          const statusA = getDeviceStatus(a);
+          const statusB = getDeviceStatus(b);
+          const wA = statusWeight[statusA] || 3;
+          const wB = statusWeight[statusB] || 3;
+          if (wA !== wB) return wA - wB;
           return a.device_id.localeCompare(b.device_id);
         });
 
         resultsList.innerHTML = data.map(dev => {
-          const status = dev.status || '库房中';
+          const status = getDeviceStatus(dev);
           let badgeColor = '';
           let statusText = status;
           let actionBtn = '';
+          let extraInfo = '';
+          let relationshipInfo = ''; // 角色视角关联信息展示
+
+          // 核心逻辑修改：根据查询者的角色，展示最关心的关联人员
+          if (activeQueryTab === 'admin') {
+            // 我是管理员，展示设备是谁借走了
+            if (status === '已借出' || status === '待确认归还') {
+              relationshipInfo = `<p class="text-[11px] text-slate-600 font-medium mt-1">👤 借用人: <span class="text-rose-600 font-bold">${dev.current_borrower || '未知'}</span></p>`;
+            } else {
+              relationshipInfo = `<p class="text-[11px] text-slate-400 mt-1">👤 借用人: 无 (在库房中)</p>`;
+            }
+          } else {
+            // 我是借用人，展示这个设备是谁在管理
+            relationshipInfo = `<p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>`;
+          }
 
           if (status === '待确认归还') {
+            // 黄色标
             badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
             statusText = "待确认归还";
+            // 管理员查询自己名下的设备时，提供绿色“确认入库”一键按钮
             if (activeQueryTab === 'admin') {
               actionBtn = `
-                <button onclick="approveReturnFromQuery('${dev.device_id}', '${dev.current_borrower}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
+                <button onclick="approveReturnFromQuery('${dev.device_id}', '${dev.current_borrower || ''}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
                   确认入库
                 </button>
               `;
             }
-          } else if (dev.current_borrower) {
+          } else if (status === '已借出') {
+            // 红色标
             badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
-            statusText = `已借出 (${dev.current_borrower})`;
+            statusText = "已借出";
+            // 显示预计归还时间
+            const expectedDate = dev.expected_return_date ? dev.expected_return_date : '未填写';
+            extraInfo = `<p class="text-[10px] text-rose-600 font-semibold mt-1">📅 预计归还时间: ${expectedDate}</p>`;
+          } else if (status === '已坏') {
+            // 红色标，排在最最下面
+            badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
+            statusText = "已坏";
           } else {
+            // 绿色标：库房中
             badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+            statusText = "库房中";
           }
 
+          const borrowTimeStr = (status === '已借出' || status === '待确认归还') && dev.borrow_time
+            ? `<p class="text-[10px] text-slate-400 mt-1">⏰ 借用时间: ${new Date(dev.borrow_time).toLocaleString('zh-CN')}</p>`
+            : '';
+
           return `
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1 text-left">
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm">
               <div class="flex justify-between items-start gap-2">
                 <div>
                   <h4 class="font-bold text-slate-800">${dev.name}</h4>
@@ -685,7 +749,9 @@
                 </div>
                 <span class="px-2 py-0.5 text-[9px] font-bold border rounded-full ${badgeColor}">${statusText}</span>
               </div>
-              ${dev.borrow_time ? `<p class="text-[10px] text-slate-400">借用时间: ${new Date(dev.borrow_time).toLocaleString('zh-CN')}</p>` : ''}
+              ${relationshipInfo}
+              ${borrowTimeStr}
+              ${extraInfo}
               ${actionBtn}
             </div>
           `;
@@ -756,11 +822,12 @@
       }
     }
 
-    // 确认归还入库逻辑
+    // 确认归还入库逻辑（支持静默缓存密码、多处列表刷新）
     async function approveReturn(deviceId, borrower) {
       let pin = localStorage.getItem('vd_admin_pin') || "";
       let isAutoChecked = false;
 
+      // 1. 自动校验缓存密码
       if (pin) {
         const { data, error } = await supabaseClient
           .from('devices')
@@ -773,6 +840,7 @@
         }
       }
 
+      // 2. 校验失败，提示输入密码
       if (!isAutoChecked) {
         pin = prompt("请输入该设备的管理员确认密码：");
         if (pin === null) return;
@@ -797,6 +865,7 @@
         localStorage.setItem('vd_admin_pin', pin);
       }
 
+      // 3. 执行归还数据更新
       try {
         const { error: devError } = await supabaseClient
           .from('devices')
@@ -820,13 +889,14 @@
 
         alert("🎉 确认成功！设备已安全归还并入库。");
 
+        // 智能多列表同步刷新
         if (!document.getElementById('view-admin').classList.contains('hidden')) {
-          loadAdminRequests();
+          loadAdminRequests(); // 刷新管理员面板
         }
         if (!document.getElementById('query-results-box').classList.contains('hidden')) {
-          runListQuery();
+          runListQuery(); // 刷新首页查询清单
         }
-        loadRecentLogs();
+        loadRecentLogs(); // 刷新最近动态
       } catch (err) {
         alert("确认入库失败: " + err.message);
       }
