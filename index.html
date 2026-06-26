@@ -599,7 +599,7 @@
       }
     }
 
-    // ================= 🌟 智能模糊搜索逻辑 (思路一) =================
+    // ================= 智能模糊搜索逻辑 =================
     async function searchManualId() {
       const query = document.getElementById('manual-id-input').value.trim();
       if (!query) {
@@ -706,7 +706,6 @@
         input.placeholder = "输入借用人姓名 (如: 李四)";
         input.value = localStorage.getItem('vd_query_borrower_name') || "";
       } else if (tab === 'overview') {
-        // 🌟 新增：设备总览，隐藏输入框，自动触发无参数拉取
         overviewTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm";
         inputContainer.classList.add('hidden');
         loadDeviceOverview();
@@ -853,7 +852,7 @@
       }
     }
 
-    // 🌟 新增：加载设备总览（设备分类 ➔ 管理员极简黄页列表）
+    // 🌟 核心优化：加载设备总览（自动按数值编号排序，并自动补齐缺口编号）
     async function loadDeviceOverview() {
       const resultsBox = document.getElementById('query-results-box');
       const resultsList = document.getElementById('query-results-list');
@@ -874,7 +873,7 @@
           return;
         }
 
-        // 提取不重复的分类并合并其保管人
+        // 1. 提取不重复的分类并合并其保管人
         const categoryMap = {};
         data.forEach(item => {
           const cat = item.category ? item.category.trim() : '未分类';
@@ -886,23 +885,113 @@
           categoryMap[cat].add(owner);
         });
 
-        // 转换为排序后的数组
-        const sortedCategories = Object.keys(categoryMap).sort();
+        // 2. 将分类分为“带数字编号前缀”和“普通分类”两组
+        const numberedCategories = [];
+        const nonNumberedCategories = [];
 
-        resultsList.innerHTML = sortedCategories.map(cat => {
-          const owners = Array.from(categoryMap[cat]).join('、');
-          return `
-            <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-xs flex justify-between items-center text-left shadow-sm">
-              <div>
-                <span class="text-slate-400 text-[10px] block mb-0.5">📂 设备分类</span>
-                <h4 class="font-bold text-slate-800 text-sm">${cat}</h4>
+        Object.keys(categoryMap).forEach(cat => {
+          // 匹配以数字开头的分类，如 "01-工具", "02.测试手机", "3 平板"
+          const match = cat.match(/^(\d+)\s*[-._\s]?\s*(.*)$/);
+          if (match) {
+            const num = parseInt(match[1], 10);
+            const originalPrefix = match[1];
+            const name = match[2] || "";
+            numberedCategories.push({
+              num: num,
+              originalPrefix: originalPrefix,
+              name: name,
+              originalCat: cat,
+              owners: categoryMap[cat]
+            });
+          } else {
+            nonNumberedCategories.push({
+              originalCat: cat,
+              owners: categoryMap[cat]
+            });
+          }
+        });
+
+        // 3. 对带编号的前缀按数值从小到大升序排序
+        numberedCategories.sort((a, b) => a.num - b.num);
+
+        const finalOverviewList = [];
+
+        // 4. 核心：如果存在带编号的分类，检测并自动补齐空缺编号 (如 01, 02, 04 缺 03，自动把 03 补上)
+        if (numberedCategories.length > 0) {
+          const minNum = 1; // 默认从 1 开始排起
+          const maxNum = numberedCategories[numberedCategories.length - 1].num;
+
+          // 智能检测前缀位数（如 "01" 长度为 2，补空缺时同样补 "03"）
+          let padLength = 2;
+          const firstWithZero = numberedCategories.find(c => c.originalPrefix.startsWith('0'));
+          if (firstWithZero) {
+            padLength = firstWithZero.originalPrefix.length;
+          }
+
+          // 建立索引哈希，便于快速检测
+          const numberedMap = {};
+          numberedCategories.forEach(c => {
+            numberedMap[c.num] = c;
+          });
+
+          for (let i = minNum; i <= maxNum; i++) {
+            if (numberedMap[i]) {
+              finalOverviewList.push({
+                displayCat: numberedMap[i].originalCat,
+                owners: Array.from(numberedMap[i].owners).join('、'),
+                isEmpty: false
+              });
+            } else {
+              // 发现编号缺漏，直接补齐
+              const formattedNum = String(i).padStart(padLength, '0');
+              finalOverviewList.push({
+                displayCat: `${formattedNum}-空缺`,
+                owners: '暂无保管人',
+                isEmpty: true
+              });
+            }
+          }
+        }
+
+        // 5. 将不带数字前缀的普通分类按常规字母顺序追加到最尾部
+        nonNumberedCategories.sort((a, b) => a.originalCat.localeCompare(b.originalCat));
+        nonNumberedCategories.forEach(c => {
+          finalOverviewList.push({
+            displayCat: c.originalCat,
+            owners: Array.from(c.owners).join('、'),
+            isEmpty: false
+          });
+        });
+
+        // 6. 渲染界面（空缺的行将采用虚线边框及半透明淡化样式，区分度更高）
+        resultsList.innerHTML = finalOverviewList.map(item => {
+          if (item.isEmpty) {
+            return `
+              <div class="p-3.5 bg-slate-50 rounded-xl border border-dashed border-slate-200 text-xs flex justify-between items-center text-left opacity-60">
+                <div>
+                  <span class="text-slate-400 text-[10px] block mb-0.5">📂 设备分类</span>
+                  <h4 class="font-medium text-slate-400 text-sm">${item.displayCat}</h4>
+                </div>
+                <div class="text-right">
+                  <span class="text-slate-400 text-[10px] block mb-0.5">🛠️ 保管管理员</span>
+                  <span class="text-slate-400 font-medium text-xs bg-slate-100 px-2 py-0.5 rounded border border-slate-200">${item.owners}</span>
+                </div>
               </div>
-              <div class="text-right">
-                <span class="text-slate-400 text-[10px] block mb-0.5">🛠️ 保管管理员</span>
-                <span class="text-blue-600 font-bold text-sm bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">${owners}</span>
+            `;
+          } else {
+            return `
+              <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-xs flex justify-between items-center text-left shadow-sm">
+                <div>
+                  <span class="text-slate-400 text-[10px] block mb-0.5">📂 设备分类</span>
+                  <h4 class="font-bold text-slate-800 text-sm">${item.displayCat}</h4>
+                </div>
+                <div class="text-right">
+                  <span class="text-slate-400 text-[10px] block mb-0.5">🛠️ 保管管理员</span>
+                  <span class="text-blue-600 font-bold text-sm bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">${item.owners}</span>
+                </div>
               </div>
-            </div>
-          `;
+            `;
+          }
         }).join('');
 
       } catch (err) {
