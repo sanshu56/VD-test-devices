@@ -351,8 +351,7 @@
     let currentDevice = null;
     let html5QrScanner = null;
     let activeQueryTab = 'admin';
-
-    function getDeviceStatus(dev) {
+function getDeviceStatus(dev) {
       if (!dev) return '库房中';
       let status = dev.status || '库房中';
       if (status === '可用') status = '库房中';
@@ -798,6 +797,29 @@
       const borrowTime = new Date().toISOString();
 
       try {
+        // 🌟 系统整体借用：走方案A的 RPC，只借可用子设备，别人占用的自动跳过
+        if (currentDevice.is_system) {
+          const { data, error } = await supabaseClient.rpc('borrow_entire_system', {
+            p_system_id: currentDevice.device_id,
+            p_borrower_name: borrowerName,
+            p_expected_return_date: expectedReturnDate || null
+          });
+          if (error) throw error;
+
+          const borrowed = data && data.borrowed_count != null ? data.borrowed_count : 0;
+          const skipped = data && data.skipped_count != null ? data.skipped_count : 0;
+          const skippedNames = data && data.skipped_names ? data.skipped_names : '';
+
+          let msg = `🎉 登记成功！您已借出整套系统中 ${borrowed} 个可用子设备。`;
+          if (skipped > 0) {
+            msg += `\n\n⚠️ 有 ${skipped} 个子设备已被他人借用，已自动跳过：\n${skippedNames}`;
+          }
+          alert(msg);
+          showDetail(currentDevice.device_id);
+          return;
+        }
+
+        // 普通单体设备借用
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({
@@ -818,20 +840,7 @@
             expected_return_date: expectedReturnDate || null
           });
 
-        if (currentDevice.is_system) {
-          const { error: subError } = await supabaseClient
-            .from('devices')
-            .update({
-              current_borrower: borrowerName,
-              borrow_time: borrowTime,
-              expected_return_date: expectedReturnDate || null,
-              status: '已借出'
-            })
-            .eq('parent_system_id', currentDevice.device_id);
-          if (subError) throw subError;
-        }
-
-        alert(`登记成功！你已成功借出设备${currentDevice.is_system ? '（整套系统）' : ''}。`);
+        alert("登记成功！你已成功借出设备。");
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("登记失败: " + err.message);
@@ -840,6 +849,8 @@
 
     async function submitReturnRequest() {
       try {
+        const borrower = currentDevice.current_borrower;
+
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({ status: '待确认归还' })
@@ -847,13 +858,16 @@
         if (devError) throw devError;
 
         if (currentDevice.is_system) {
+          // 🌟 只把"借用人是同一个人"的子设备一起申请归还，别人借的不动
           const { error: subError } = await supabaseClient
             .from('devices')
             .update({ status: '待确认归还' })
-            .eq('parent_system_id', currentDevice.device_id);
+            .eq('parent_system_id', currentDevice.device_id)
+            .eq('current_borrower', borrower);
           if (subError) throw subError;
         }
- alert("归还申请提交成功！请联系管理员确认入库。");
+
+        alert("归还申请提交成功！请联系管理员确认入库。");
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("申请归还失败: " + err.message);
@@ -956,14 +970,24 @@
 
       try {
         showGlobalLoading(true);
-        const { error } = await supabaseClient.rpc('borrow_entire_system', {
+        const { data, error } = await supabaseClient.rpc('borrow_entire_system', {
           p_system_id: systemId,
           p_borrower_name: borrowerName,
           p_expected_return_date: formattedDate
         });
         if (error) throw error;
 
-        alert(`🎉 借用成功！您已成功借出【${systemName}】整套系统及旗下所有子组件。`);
+        // 新版 RPC 返回 JSON：borrowed_count / skipped_count / skipped_names
+        const borrowed = data && data.borrowed_count != null ? data.borrowed_count : 0;
+        const skipped = data && data.skipped_count != null ? data.skipped_count : 0;
+        const skippedNames = data && data.skipped_names ? data.skipped_names : '';
+
+        let msg = `🎉 借用成功！您已借出【${systemName}】系统中 ${borrowed} 个可用子设备。`;
+        if (skipped > 0) {
+          msg += `\n\n⚠️ 有 ${skipped} 个子设备已被他人借用，已自动跳过：\n${skippedNames}`;
+        }
+        alert(msg);
+
         searchManualId();
         loadRecentLogs();
       } catch (err) {
@@ -1270,8 +1294,9 @@
         if (devError) throw devError;
 
         if (dev.is_system) {
+          // 🌟 只申请归还"自己借的"子设备，别人借的不动
           const { error: subError } = await supabaseClient
-            .from('devices').update({ status: '待确认归还' }).eq('parent_system_id', deviceId);
+            .from('devices').update({ status: '待确认归还' }).eq('parent_system_id', deviceId).eq('current_borrower', dev.current_borrower);
           if (subError) throw subError;
         }
 
@@ -1378,8 +1403,10 @@
 
       try {
         const { data: devInfo, error: fetchErr } = await supabaseClient
-          .from('devices').select('is_system').eq('device_id', deviceId).single();
+          .from('devices').select('is_system, current_borrower').eq('device_id', deviceId).single();
         if (fetchErr) throw fetchErr;
+        // 以归还申请时记录的借用人为准（参数 borrower），兜底用数据库里的
+        const targetBorrower = borrower || (devInfo && devInfo.current_borrower);
 
         const { error: devError } = await supabaseClient
           .from('devices')
@@ -1401,6 +1428,7 @@
           });
 
         if (devInfo && devInfo.is_system) {
+          // 🌟 关键：只把"借用人是同一个人"的子设备入库，别人借的绝不能动
           const { error: subError } = await supabaseClient
             .from('devices')
             .update({
@@ -1409,7 +1437,8 @@
               expected_return_date: null,
               status: '库房中'
             })
-            .eq('parent_system_id', deviceId);
+            .eq('parent_system_id', deviceId)
+            .eq('current_borrower', targetBorrower);
           if (subError) throw subError;
         }
 
@@ -1561,4 +1590,4 @@
     }
   </script>
 </body>
-</html>
+</html> 
