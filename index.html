@@ -47,14 +47,14 @@
 
         <div class="relative flex py-2 items-center text-slate-300">
           <div class="flex-grow border-t border-slate-200"></div>
-          <span class="flex-shrink mx-4 text-xs text-slate-400 font-medium">或者手动输入</span>
+          <span class="flex-shrink mx-4 text-xs text-slate-400 font-medium">或者智能搜索</span>
           <div class="flex-grow border-t border-slate-200"></div>
         </div>
 
-        <!-- 手动输入 -->
+        <!-- 智能搜索输入 -->
         <div class="flex gap-2">
-          <input type="text" id="manual-id-input" placeholder="输入设备ID (如: VD-GJ-031-01)" class="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
-          <button onclick="searchManualId()" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm transition active:scale-95">查询</button>
+          <input type="text" id="manual-id-input" placeholder="输入设备名称、分类或ID (如: 平板)" class="flex-grow border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500">
+          <button onclick="searchManualId()" class="bg-slate-800 hover:bg-slate-900 text-white px-5 py-3 rounded-xl font-medium text-sm transition active:scale-95">搜索</button>
         </div>
       </div>
 
@@ -72,10 +72,13 @@
           <button id="tab-query-borrower" onclick="switchQueryTab('borrower')" class="flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400">
             我是借用人
           </button>
+          <button id="tab-query-overview" onclick="switchQueryTab('overview')" class="flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400">
+            设备总览
+          </button>
         </div>
 
-        <!-- 输入框与查询按钮 -->
-        <div class="flex gap-2">
+        <!-- 输入框与查询按钮容器 -->
+        <div id="query-input-container" class="flex gap-2">
           <input type="text" id="query-name-input" placeholder="输入管理员姓名 (如: 张三)" class="flex-grow border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
           <button onclick="runListQuery()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs transition active:scale-95">查询清单</button>
         </div>
@@ -267,7 +270,7 @@
     let supabaseClient = null;
     let currentDevice = null;
     let html5QrScanner = null;
-    let activeQueryTab = 'admin'; // 'admin' 或 'borrower'
+    let activeQueryTab = 'admin'; // 'admin'、'borrower' 或 'overview'
 
     // 智能统一状态判定方法
     function getDeviceStatus(dev) {
@@ -412,7 +415,11 @@
       
       // 刷新当前的查询列表
       if (!document.getElementById('query-results-box').classList.contains('hidden')) {
-        runListQuery();
+        if (activeQueryTab === 'overview') {
+          loadDeviceOverview();
+        } else {
+          runListQuery();
+        }
       }
     }
 
@@ -592,6 +599,81 @@
       }
     }
 
+    // ================= 🌟 智能模糊搜索逻辑 (思路一) =================
+    async function searchManualId() {
+      const query = document.getElementById('manual-id-input').value.trim();
+      if (!query) {
+        alert("请输入搜索关键词！");
+        return;
+      }
+
+      const resultsBox = document.getElementById('query-results-box');
+      const resultsList = document.getElementById('query-results-list');
+      
+      resultsBox.classList.remove('hidden');
+      resultsList.innerHTML = `<p class="text-slate-400 text-center py-6 text-xs">正在为您搜索设备...</p>`;
+
+      try {
+        // 利用 Supabase 的 OR 逻辑进行模糊匹配设备ID、名称、分类
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('*')
+          .or(`device_id.ilike.%${query}%,name.ilike.%${query}%,category.ilike.%${query}%`);
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          resultsList.innerHTML = `<p class="text-slate-400 text-center py-8 text-xs">🔍 未找到匹配的设备，请尝试其他词</p>`;
+          return;
+        }
+
+        // 定义状态排序权重
+        const statusWeight = {
+          '待确认归还': 1,
+          '已借出': 2,
+          '库房中': 3,
+          '已坏': 4
+        };
+
+        // 按状态权重升序排列
+        data.sort((a, b) => {
+          const statusA = getDeviceStatus(a);
+          const statusB = getDeviceStatus(b);
+          const wA = statusWeight[statusA] || 3;
+          const wB = statusWeight[statusB] || 3;
+          if (wA !== wB) return wA - wB;
+          return a.device_id.localeCompare(b.device_id);
+        });
+
+        // 渲染搜索出来的设备卡片（点击卡片秒开详情页）
+        resultsList.innerHTML = data.map(dev => {
+          const status = getDeviceStatus(dev);
+          let badgeColor = '';
+          if (status === '待确认归还') badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
+          else if (status === '已借出') badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
+          else if (status === '已坏') badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
+          else badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
+
+          return `
+            <div onclick="showDetail('${dev.device_id}')" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm cursor-pointer transition active:scale-[0.98]">
+              <div class="flex justify-between items-start gap-2">
+                <div>
+                  <h4 class="font-bold text-slate-800">${dev.name}</h4>
+                  <p class="text-[10px] font-mono text-slate-400">ID: ${dev.device_id} | 分类: ${dev.category || '暂无'}</p>
+                </div>
+                <span class="px-2 py-0.5 text-[9px] font-bold border rounded-full ${badgeColor}">${status}</span>
+              </div>
+              <p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>
+              <p class="text-[10px] text-slate-400">📍 存放位置: ${dev.location || '暂无'}</p>
+            </div>
+          `;
+        }).join('');
+
+      } catch (err) {
+        resultsList.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">搜索失败: ${err.message}</p>`;
+      }
+    }
+
     // ================= 清单查询交互逻辑 =================
 
     // 切换查询标签页
@@ -599,23 +681,35 @@
       activeQueryTab = tab;
       const adminTab = document.getElementById('tab-query-admin');
       const borrowerTab = document.getElementById('tab-query-borrower');
-      const input = document.getElementById('query-name-input');
+      const overviewTab = document.getElementById('tab-query-overview');
+      const inputContainer = document.getElementById('query-input-container');
       const resultsBox = document.getElementById('query-results-box');
 
       // 清空上次查询结果
       resultsBox.classList.add('hidden');
       document.getElementById('query-results-list').innerHTML = '';
 
+      adminTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+      borrowerTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+      overviewTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+
       if (tab === 'admin') {
         adminTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm";
-        borrowerTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+        inputContainer.classList.remove('hidden');
+        const input = document.getElementById('query-name-input');
         input.placeholder = "输入管理员姓名 (如: 张三)";
         input.value = localStorage.getItem('vd_query_admin_name') || "";
-      } else {
-        adminTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-400";
+      } else if (tab === 'borrower') {
         borrowerTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm";
+        inputContainer.classList.remove('hidden');
+        const input = document.getElementById('query-name-input');
         input.placeholder = "输入借用人姓名 (如: 李四)";
         input.value = localStorage.getItem('vd_query_borrower_name') || "";
+      } else if (tab === 'overview') {
+        // 🌟 新增：设备总览，隐藏输入框，自动触发无参数拉取
+        overviewTab.className = "flex-1 py-2 text-xs font-bold rounded-lg transition text-slate-700 bg-white shadow-sm";
+        inputContainer.classList.add('hidden');
+        loadDeviceOverview();
       }
     }
 
@@ -638,7 +732,6 @@
         let error = null;
 
         if (activeQueryTab === 'admin') {
-          // 记住管理员名字
           localStorage.setItem('vd_query_admin_name', name);
           const res = await supabaseClient
             .from('devices')
@@ -647,7 +740,6 @@
           data = res.data;
           error = res.error;
         } else {
-          // 记住借用人名字
           localStorage.setItem('vd_query_borrower_name', name);
           const res = await supabaseClient
             .from('devices')
@@ -664,11 +756,6 @@
           return;
         }
 
-        // 定义状态排序权重
-        // 1. 待确认归还 (1) -> 最上面
-        // 2. 已借出 (2) -> 中间
-        // 3. 库房中 (3) -> 中下
-        // 4. 已坏 (4) -> 最下面
         const statusWeight = {
           '待确认归还': 1,
           '已借出': 2,
@@ -676,7 +763,6 @@
           '已坏': 4
         };
 
-        // 按状态权重升序排列，权重相同按 ID 排序
         data.sort((a, b) => {
           const statusA = getDeviceStatus(a);
           const statusB = getDeviceStatus(b);
@@ -692,25 +778,21 @@
           let statusText = status;
           let actionBtn = '';
           let extraInfo = '';
-          let relationshipInfo = ''; // 角色视角关联信息展示
+          let relationshipInfo = '';
 
           if (activeQueryTab === 'admin') {
-            // 我是管理员，展示设备是谁借走了
             if (status === '已借出' || status === '待确认归还') {
               relationshipInfo = `<p class="text-[11px] text-slate-600 font-medium mt-1">👤 借用人: <span class="text-rose-600 font-bold">${dev.current_borrower || '未知'}</span></p>`;
             } else {
               relationshipInfo = `<p class="text-[11px] text-slate-400 mt-1">👤 借用人: 无 (在库房中)</p>`;
             }
           } else {
-            // 我是借用人，展示这个设备是谁在管理
             relationshipInfo = `<p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>`;
           }
 
           if (status === '待确认归还') {
-            // 黄色标
             badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
             statusText = "待确认归还";
-            // 管理员查询自己名下的设备时，提供绿色“确认入库”一键按钮
             if (activeQueryTab === 'admin') {
               actionBtn = `
                 <button onclick="approveReturnFromQuery('${dev.device_id}', '${dev.current_borrower || ''}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
@@ -718,7 +800,6 @@
                 </button>
               `;
             } else {
-              // 借用人查询自己借的东西，如果是待确认状态，显示提示，无需操作
               actionBtn = `
                 <div class="mt-2 w-full bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold py-1.5 px-2 rounded-lg text-center">
                   ⏳ 待管理员确认入库
@@ -726,14 +807,11 @@
               `;
             }
           } else if (status === '已借出') {
-            // 红色标
             badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
             statusText = "已借出";
-            // 显示预计归还时间
             const expectedDate = dev.expected_return_date ? dev.expected_return_date : '未填写';
             extraInfo = `<p class="text-[10px] text-rose-600 font-semibold mt-1">📅 预计归还时间: ${expectedDate}</p>`;
             
-            // 🌟 核心新增：如果当前是“借用人”视角，且状态是“已借出”，直接提供“一键归还”按钮
             if (activeQueryTab === 'borrower') {
               actionBtn = `
                 <button onclick="requestReturnFromQuery('${dev.device_id}')" class="mt-2 w-full bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
@@ -742,24 +820,22 @@
               `;
             }
           } else if (status === '已坏') {
-            // 红色标，排在最最下面
             badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
             statusText = "已坏";
           } else {
-            // 绿色标：库房中
             badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
             statusText = "库房中";
           }
 
-          const borrowTimeStr = (status === '已借出' || status === '待确认归还') && dev.borrow_time
+          const borrowTimeStr = (status === '...已借出' || status === '待确认归还') && dev.borrow_time
             ? `<p class="text-[10px] text-slate-400 mt-1">⏰ 借用时间: ${new Date(dev.borrow_time).toLocaleString('zh-CN')}</p>`
             : '';
 
           return `
             <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm">
               <div class="flex justify-between items-start gap-2">
-                <div>
-                  <h4 class="font-bold text-slate-800">${dev.name}</h4>
+                <div onclick="showDetail('${dev.device_id}')" class="cursor-pointer flex-grow">
+                  <h4 class="font-bold text-slate-800 hover:text-blue-600 transition">${dev.name}</h4>
                   <p class="text-[10px] font-mono text-slate-400">ID: ${dev.device_id}</p>
                 </div>
                 <span class="px-2 py-0.5 text-[9px] font-bold border rounded-full ${badgeColor}">${statusText}</span>
@@ -777,12 +853,68 @@
       }
     }
 
-    // 🌟 核心新增：借用人在查询列表中直接一键申请归还，并发送微信推送给保管管理员
+    // 🌟 新增：加载设备总览（设备分类 ➔ 管理员极简黄页列表）
+    async function loadDeviceOverview() {
+      const resultsBox = document.getElementById('query-results-box');
+      const resultsList = document.getElementById('query-results-list');
+      
+      resultsBox.classList.remove('hidden');
+      resultsList.innerHTML = `<p class="text-slate-400 text-center py-6 text-xs">正在获取设备总览数据...</p>`;
+
+      try {
+        // 从数据库拉取所有设备的分类和保管人
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('category, owner');
+
+        if (error) throw error;
+
+        if (!data || data.length === 0) {
+          resultsList.innerHTML = `<p class="text-slate-400 text-center py-8 text-xs">🔍 暂无设备分类数据</p>`;
+          return;
+        }
+
+        // 提取不重复的分类并合并其保管人
+        const categoryMap = {};
+        data.forEach(item => {
+          const cat = item.category ? item.category.trim() : '未分类';
+          const owner = item.owner ? item.owner.trim() : '暂无管理员';
+          
+          if (!categoryMap[cat]) {
+            categoryMap[cat] = new Set();
+          }
+          categoryMap[cat].add(owner);
+        });
+
+        // 转换为排序后的数组
+        const sortedCategories = Object.keys(categoryMap).sort();
+
+        resultsList.innerHTML = sortedCategories.map(cat => {
+          const owners = Array.from(categoryMap[cat]).join('、');
+          return `
+            <div class="p-3.5 bg-slate-50 rounded-xl border border-slate-100 text-xs flex justify-between items-center text-left shadow-sm">
+              <div>
+                <span class="text-slate-400 text-[10px] block mb-0.5">📂 设备分类</span>
+                <h4 class="font-bold text-slate-800 text-sm">${cat}</h4>
+              </div>
+              <div class="text-right">
+                <span class="text-slate-400 text-[10px] block mb-0.5">🛠️ 保管管理员</span>
+                <span class="text-blue-600 font-bold text-sm bg-blue-50 px-2.5 py-1 rounded-lg border border-blue-100">${owners}</span>
+              </div>
+            </div>
+          `;
+        }).join('');
+
+      } catch (err) {
+        resultsList.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">加载总览失败: ${err.message}</p>`;
+      }
+    }
+
+    // 借用人在查询列表中直接一键申请归还，并发送微信推送给保管管理员
     async function requestReturnFromQuery(deviceId) {
       if (!confirm("确定要申请归还该设备吗？\n系统将自动通知保管管理员确认。")) return;
       
       try {
-        // 1. 获取最新设备数据（为了拿到保管管理员和推送key）
         const { data: dev, error: fetchErr } = await supabaseClient
           .from('devices')
           .select('*')
@@ -798,7 +930,6 @@
           return;
         }
 
-        // 2. 在数据库中将状态更新为 待确认归还
         const { error: devError } = await supabaseClient
           .from('devices')
           .update({ status: '待确认归还' })
@@ -806,7 +937,6 @@
 
         if (devError) throw devError;
 
-        // 3. 执行微信推送给管理员
         if (dev.admin_push_key) {
           const adminUrl = `https://sanshu56.github.io/VD-test-devices/?admin=${encodeURIComponent(dev.owner)}`;
           const title = `🚨 设备归还确认申请`;
@@ -827,8 +957,6 @@
         }
 
         alert("🎉 归还申请提交成功！已自动微信通知管理员。");
-        
-        // 4. 刷新当前清单和最近动态
         runListQuery();
         loadRecentLogs();
       } catch (err) {
@@ -896,12 +1024,11 @@
       }
     }
 
-    // 确认归还入库逻辑（支持静默缓存密码、多处列表刷新）
+    // 确认归还入库逻辑
     async function approveReturn(deviceId, borrower) {
       let pin = localStorage.getItem('vd_admin_pin') || "";
       let isAutoChecked = false;
 
-      // 1. 自动校验缓存密码
       if (pin) {
         const { data, error } = await supabaseClient
           .from('devices')
@@ -914,7 +1041,6 @@
         }
       }
 
-      // 2. 校验失败，提示输入密码
       if (!isAutoChecked) {
         pin = prompt("请输入该设备的管理员确认密码：");
         if (pin === null) return;
@@ -939,7 +1065,6 @@
         localStorage.setItem('vd_admin_pin', pin);
       }
 
-      // 3. 执行归还数据更新
       try {
         const { error: devError } = await supabaseClient
           .from('devices')
@@ -963,14 +1088,17 @@
 
         alert("🎉 确认成功！设备已安全归还并入库。");
 
-        // 智能多列表同步刷新
         if (!document.getElementById('view-admin').classList.contains('hidden')) {
-          loadAdminRequests(); // 刷新管理员面板
+          loadAdminRequests();
         }
         if (!document.getElementById('query-results-box').classList.contains('hidden')) {
-          runListQuery(); // 刷新首页查询清单
+          if (activeQueryTab === 'overview') {
+            loadDeviceOverview();
+          } else {
+            runListQuery();
+          }
         }
-        loadRecentLogs(); // 刷新最近动态
+        loadRecentLogs();
       } catch (err) {
         alert("确认入库失败: " + err.message);
       }
@@ -1078,15 +1206,6 @@
           html5QrScanner = null;
         }).catch(err => console.error("停止扫码失败", err));
       }
-    }
-
-    function searchManualId() {
-      const id = document.getElementById('manual-id-input').value.trim();
-      if (!id) {
-        showErrorState("请输入设备 ID！");
-        return;
-      }
-      showDetail(id);
     }
   </script>
 </body>
