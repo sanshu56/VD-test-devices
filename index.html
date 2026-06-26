@@ -1,3 +1,18 @@
+Tianren Wang
+2:17 PM
+前端代码更新直接给我整段代码，我不想去翻到底该修改哪一段
+
+Gemini 3.5 Flash
+2:19 PM
+这是为您整合了所有更新的完整前端 HTML 代码。其中已经完美集成了：
+
+模糊搜索结果中，系统级设备右下角直接显示“⚡ 一键借用整套系统”按钮，点击即可直接调用 Supabase 后端 RPC 函数进行整套借出。
+彻底移除了所有微信通知（方糖推送）逻辑。
+在管理员面板中保留并优化了“数据备份管理”一键导出功能。
+您直接复制以下全部代码，覆盖您本地的 HTML 文件即可使用：
+
+Html
+
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
@@ -967,6 +982,16 @@
 
           const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
 
+          // 🌟 如果是系统整体，且在库房中，显示一键借用按钮
+          let quickBorrowBtn = '';
+          if (dev.is_system && status === '库房中') {
+            quickBorrowBtn = `
+              <button onclick="event.stopPropagation(); quickBorrowSystem('${dev.device_id}', '${dev.name}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
+                ⚡ 一键借用整套系统
+              </button>
+            `;
+          }
+
           return `
             <div onclick="showDetail('${dev.device_id}')" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm cursor-pointer transition active:scale-[0.98]">
               <div class="flex justify-between items-start gap-2">
@@ -978,12 +1003,61 @@
               </div>
               <p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>
               <p class="text-[10px] text-slate-400">📍 存放位置: ${dev.location || '暂无'}</p>
+              ${quickBorrowBtn}
             </div>
           `;
         }).join('');
 
       } catch (err) {
         resultsList.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">搜索失败: ${err.message}</p>`;
+      }
+    }
+
+    // ================= 一键借用整套系统逻辑 =================
+    async function quickBorrowSystem(systemId, systemName) {
+      // 1. 获取本地缓存的姓名，如果没有则弹窗询问
+      let borrowerName = localStorage.getItem('vd_user_nickname') || "";
+      borrowerName = prompt("请输入您的真实姓名以确认借用整套系统：", borrowerName);
+      
+      if (borrowerName === null) return; // 用户取消
+      borrowerName = borrowerName.trim();
+      
+      if (!borrowerName) {
+        alert("借用人姓名不能为空！");
+        return;
+      }
+      
+      // 缓存姓名方便下次使用
+      localStorage.setItem('vd_user_nickname', borrowerName);
+
+      // 2. 询问预计归还日期（可选）
+      const expectedReturnDate = prompt("请输入预计归还日期 (格式如: 2026-07-30，可直接留空不填)：");
+      let formattedDate = null;
+      if (expectedReturnDate && expectedReturnDate.trim()) {
+        formattedDate = expectedReturnDate.trim();
+      }
+
+      try {
+        showGlobalLoading(true);
+
+        // 3. 调用 Supabase 后端编写好的 RPC 函数
+        const { error } = await supabaseClient.rpc('borrow_entire_system', {
+          p_system_id: systemId,
+          p_borrower_name: borrowerName,
+          p_expected_return_date: formattedDate
+        });
+
+        if (error) throw error;
+
+        alert(`🎉 借用成功！您已成功借出【${systemName}】整套系统及旗下所有子组件。`);
+        
+        // 4. 刷新界面数据
+        searchManualId(); // 刷新当前搜索列表状态
+        loadRecentLogs(); // 刷新最近动态
+      } catch (err) {
+        alert("一键借用失败: " + err.message);
+      } finally {
+        showGlobalLoading(false);
       }
     }
 
@@ -1643,3 +1717,5 @@
   </script>
 </body>
 </html>
+
+
