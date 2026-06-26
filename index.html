@@ -694,7 +694,6 @@
           let extraInfo = '';
           let relationshipInfo = ''; // 角色视角关联信息展示
 
-          // 核心逻辑修改：根据查询者的角色，展示最关心的关联人员
           if (activeQueryTab === 'admin') {
             // 我是管理员，展示设备是谁借走了
             if (status === '已借出' || status === '待确认归还') {
@@ -718,6 +717,13 @@
                   确认入库
                 </button>
               `;
+            } else {
+              // 借用人查询自己借的东西，如果是待确认状态，显示提示，无需操作
+              actionBtn = `
+                <div class="mt-2 w-full bg-amber-50 text-amber-600 border border-amber-100 text-[10px] font-bold py-1.5 px-2 rounded-lg text-center">
+                  ⏳ 待管理员确认入库
+                </div>
+              `;
             }
           } else if (status === '已借出') {
             // 红色标
@@ -726,6 +732,15 @@
             // 显示预计归还时间
             const expectedDate = dev.expected_return_date ? dev.expected_return_date : '未填写';
             extraInfo = `<p class="text-[10px] text-rose-600 font-semibold mt-1">📅 预计归还时间: ${expectedDate}</p>`;
+            
+            // 🌟 核心新增：如果当前是“借用人”视角，且状态是“已借出”，直接提供“一键归还”按钮
+            if (activeQueryTab === 'borrower') {
+              actionBtn = `
+                <button onclick="requestReturnFromQuery('${dev.device_id}')" class="mt-2 w-full bg-amber-500 hover:bg-amber-600 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
+                  🔄 申请归还
+                </button>
+              `;
+            }
           } else if (status === '已坏') {
             // 红色标，排在最最下面
             badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
@@ -759,6 +774,65 @@
 
       } catch (err) {
         resultsList.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">查询失败: ${err.message}</p>`;
+      }
+    }
+
+    // 🌟 核心新增：借用人在查询列表中直接一键申请归还，并发送微信推送给保管管理员
+    async function requestReturnFromQuery(deviceId) {
+      if (!confirm("确定要申请归还该设备吗？\n系统将自动通知保管管理员确认。")) return;
+      
+      try {
+        // 1. 获取最新设备数据（为了拿到保管管理员和推送key）
+        const { data: dev, error: fetchErr } = await supabaseClient
+          .from('devices')
+          .select('*')
+          .eq('device_id', deviceId)
+          .single();
+
+        if (fetchErr) throw fetchErr;
+        if (!dev) throw new Error("未找到该设备信息");
+
+        const borrower = dev.current_borrower;
+        if (!borrower) {
+          alert("该设备不在借出状态，无需归还！");
+          return;
+        }
+
+        // 2. 在数据库中将状态更新为 待确认归还
+        const { error: devError } = await supabaseClient
+          .from('devices')
+          .update({ status: '待确认归还' })
+          .eq('device_id', deviceId);
+
+        if (devError) throw devError;
+
+        // 3. 执行微信推送给管理员
+        if (dev.admin_push_key) {
+          const adminUrl = `https://sanshu56.github.io/VD-test-devices/?admin=${encodeURIComponent(dev.owner)}`;
+          const title = `🚨 设备归还确认申请`;
+          const desp = `### 申请详情\n` +
+                       `* **设备名称**：${dev.name}\n` +
+                       `* **设备 ID**：${dev.device_id}\n` +
+                       `* **借用人员**：${borrower}\n` +
+                       `* **保管管理员**：${dev.owner}\n\n` +
+                       `[👉 点击此处一键确认归还](${adminUrl})`;
+
+          const pushUrl = `https://sctapi.ftqq.com/${dev.admin_push_key}.send`;
+          fetch(pushUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: `title=${encodeURIComponent(title)}&desp=${encodeURIComponent(desp)}`
+          }).then(res => console.log('微信推送成功'))
+            .catch(err => console.error('微信推送失败', err));
+        }
+
+        alert("🎉 归还申请提交成功！已自动微信通知管理员。");
+        
+        // 4. 刷新当前清单和最近动态
+        runListQuery();
+        loadRecentLogs();
+      } catch (err) {
+        alert("归还申请失败: " + err.message);
       }
     }
 
