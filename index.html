@@ -131,7 +131,7 @@
         </button>
       </div>
 
-      <!-- 设备信息卡片 -->
+      <!-- 设备信息展示卡片 -->
       <div id="detail-content" class="hidden space-y-6">
         <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 relative overflow-hidden">
           <!-- 状态标签 -->
@@ -162,6 +162,13 @@
               <p class="text-slate-400 text-xs">存放位置</p>
               <p id="device-location" class="font-semibold text-slate-700">-</p>
             </div>
+          </div>
+
+          <!-- ✏️ 编辑按钮入口 -->
+          <div class="flex justify-end pt-3 border-t border-slate-100 mt-2">
+            <button onclick="enterEditMode()" class="text-xs text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1 transition">
+              ✏️ 编辑设备信息
+            </button>
           </div>
         </div>
 
@@ -217,6 +224,52 @@
           <p class="text-xs text-slate-400">
             该设备当前状态为 <strong class="text-rose-600">已坏</strong>，暂不支持借用。请联系保管管理员处理。
           </p>
+        </div>
+      </div>
+
+      <!-- 🌟 设备信息编辑卡片 (默认隐藏，密码校验通过后显示) -->
+      <div id="detail-edit-form" class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4 hidden">
+        <h3 class="text-lg font-bold text-slate-700 flex items-center gap-1.5">
+          <span>✏️</span> 编辑设备信息
+        </h3>
+        <div class="space-y-3 text-sm">
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1">设备名称 (不可修改)</label>
+            <p id="edit-static-name" class="font-semibold text-slate-500 bg-slate-50 px-3.5 py-2.5 rounded-xl border border-slate-100">-</p>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-400 mb-1">专属管理员 (前端不可更改)</label>
+            <p id="edit-static-owner" class="font-semibold text-slate-500 bg-slate-50 px-3.5 py-2.5 rounded-xl border border-slate-100">-</p>
+            <p class="text-[10px] text-rose-500 mt-1">⚠️ 管理员归属不可更改，只能由系统管理员在数据库中修改。</p>
+          </div>
+          <div class="grid grid-cols-2 gap-3">
+            <div>
+              <label class="block text-xs font-bold text-slate-500 mb-1">型号</label>
+              <input type="text" id="edit-input-model" placeholder="输入设备型号" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-500 mb-1">序列号 (SN)</label>
+              <input type="text" id="edit-input-sn" placeholder="输入序列号" class="w-full border border-slate-200 rounded-xl px-3 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+            </div>
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">存放位置</label>
+            <input type="text" id="edit-input-location" placeholder="输入具体存放货架或工位" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+          </div>
+          <div>
+            <label class="block text-xs font-bold text-slate-500 mb-1">设备状态</label>
+            <select id="edit-select-status" class="w-full border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500 bg-white">
+              <!-- 动态填充选项 -->
+            </select>
+          </div>
+          <div class="flex gap-2 pt-2">
+            <button onclick="cancelEditMode()" class="flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2.5 rounded-xl transition text-sm active:scale-95">
+              取消
+            </button>
+            <button onclick="submitEdit()" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white font-semibold py-2.5 rounded-xl transition text-sm shadow-md active:scale-95">
+              💾 保存修改
+            </button>
+          </div>
         </div>
       </div>
     </div>
@@ -401,6 +454,7 @@
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-detail').classList.add('hidden');
       document.getElementById('view-admin').classList.add('hidden');
+      document.getElementById('detail-edit-form').classList.add('hidden');
       stopScanner();
       loadRecentLogs();
       
@@ -419,6 +473,7 @@
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-admin').classList.add('hidden');
+      document.getElementById('detail-edit-form').classList.add('hidden');
       document.getElementById('view-detail').classList.remove('hidden');
       
       document.getElementById('detail-loading').classList.remove('hidden');
@@ -507,6 +562,134 @@
         const savedName = localStorage.getItem('vd_user_nickname') || "";
         document.getElementById('borrower-name').value = savedName;
         document.getElementById('expected-return-date').value = "";
+      }
+    }
+
+    // 🌟 进入设备信息编辑模式 (需要管理员密码验证)
+    async function enterEditMode() {
+      let pin = localStorage.getItem('vd_admin_pin') || "";
+      let isAutoChecked = false;
+
+      // 1. 自动校验本地缓存密码
+      if (pin) {
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('device_id')
+          .eq('device_id', currentDevice.device_id)
+          .eq('admin_pin', pin);
+        
+        if (!error && data && data.length > 0) {
+          isAutoChecked = true;
+        }
+      }
+
+      // 2. 本地无缓存或校验失败，提示输入密码
+      if (!isAutoChecked) {
+        pin = prompt("请输入该设备的管理员密码以编辑信息：");
+        if (pin === null) return; // 用户取消
+        pin = pin.trim();
+        
+        if (!pin) {
+          alert("密码不能为空！");
+          return;
+        }
+
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('device_id')
+          .eq('device_id', currentDevice.device_id)
+          .eq('admin_pin', pin);
+
+        if (error || !data || data.length === 0) {
+          alert("❌ 密码错误，您无权编辑此设备信息！");
+          return;
+        }
+
+        localStorage.setItem('vd_admin_pin', pin); // 缓存密码
+      }
+
+      // 3. 验证通过：隐藏详情卡片，显示编辑表单卡片
+      document.getElementById('detail-content').classList.add('hidden');
+      document.getElementById('detail-edit-form').classList.remove('hidden');
+
+      // 填充表单默认值
+      document.getElementById('edit-static-name').innerText = currentDevice.name;
+      document.getElementById('edit-static-owner').innerText = currentDevice.owner || "暂无管理员";
+      document.getElementById('edit-input-model').value = currentDevice.model || "";
+      document.getElementById('edit-input-sn').value = currentDevice.sn || "";
+      document.getElementById('edit-input-location').value = currentDevice.location || "";
+
+      // 动态填充设备状态下拉选项
+      const statusSelect = document.getElementById('edit-select-status');
+      statusSelect.innerHTML = '';
+      
+      const currentStatus = getDeviceStatus(currentDevice);
+      const options = [
+        { value: '库房中', text: '🟢 库房中 (可借用)' },
+        { value: '已坏', text: '🛠️ 已坏 (不可借用)' }
+      ];
+
+      // 如果当前是“已借出”或“待确认归还”，额外添加对应的选项，防止误覆盖
+      if (currentStatus === '已借出') {
+        options.unshift({ value: '已借出', text: `🔴 已借出 (借用人: ${currentDevice.current_borrower})` });
+      } else if (currentStatus === '待确认归还') {
+        options.unshift({ value: '待确认归还', text: `⏳ 待确认归还 (借用人: ${currentDevice.current_borrower})` });
+      }
+
+      options.forEach(opt => {
+        const el = document.createElement('option');
+        el.value = opt.value;
+        el.text = opt.text;
+        if (opt.value === currentStatus) el.selected = true;
+        statusSelect.appendChild(el);
+      });
+    }
+
+    // 取消编辑模式
+    function cancelEditMode() {
+      document.getElementById('detail-edit-form').classList.add('hidden');
+      document.getElementById('detail-content').classList.remove('hidden');
+    }
+
+    // 🌟 提交编辑修改
+    async function submitEdit() {
+      const model = document.getElementById('edit-input-model').value.trim();
+      const sn = document.getElementById('edit-input-sn').value.trim();
+      const location = document.getElementById('edit-input-location').value.trim();
+      const status = document.getElementById('edit-select-status').value;
+
+      // 组装更新数据 (严格排除owner，确保管理员归属无法篡改)
+      const updateData = {
+        model: model || null,
+        sn: sn || null,
+        location: location || null,
+        status: status
+      };
+
+      // 智能级联：如果状态被强制改为 库房中 或 已坏，且原先处于借出状态，必须清除借用人信息
+      const oldStatus = getDeviceStatus(currentDevice);
+      if ((status === '库房中' || status === '已坏') && (oldStatus === '已借出' || oldStatus === '待确认归还')) {
+        if (!confirm("⚠️ 检测到您将设备状态修改为了非借出状态，系统将自动清除当前的借用人和借用时间。是否确定修改？")) {
+          return;
+        }
+        updateData.current_borrower = null;
+        updateData.borrow_time = null;
+        updateData.expected_return_date = null;
+      }
+
+      try {
+        const { error } = await supabaseClient
+          .from('devices')
+          .update(updateData)
+          .eq('device_id', currentDevice.device_id);
+
+        if (error) throw error;
+
+        alert("🎉 设备信息更新成功！");
+        document.getElementById('detail-edit-form').classList.add('hidden');
+        showDetail(currentDevice.device_id); // 刷新详情页展示最新数据
+      } catch (err) {
+        alert("修改失败: " + err.message);
       }
     }
 
