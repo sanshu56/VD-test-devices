@@ -141,7 +141,11 @@
 
           <div class="space-y-1">
             <span id="device-category" class="text-xs font-semibold text-blue-600 tracking-wider uppercase">分类</span>
-            <h2 id="device-name" class="text-xl font-black text-slate-800">设备名称</h2>
+            <!-- 🌟 详情页标题区域：新增系统整体高亮标签 -->
+            <h2 class="text-xl font-black text-slate-800 flex items-center gap-1.5 flex-wrap">
+              <span id="device-name">设备名称</span>
+              <span id="device-system-tag" class="hidden bg-blue-100 text-blue-800 text-[10px] font-extrabold px-2 py-0.5 rounded">🌌 系统整体</span>
+            </h2>
             <p id="device-id-tag" class="text-xs font-mono text-slate-400">ID: </p>
           </div>
 
@@ -352,6 +356,12 @@
     let html5QrScanner = null;
     let activeQueryTab = 'admin'; // 'admin'、'borrower' 或 'overview'
 
+    // 🌟 智能系统判定辅助函数（解决任何数据库返回类型不一致的 Bug）
+    function isDeviceSystem(dev) {
+      if (!dev) return false;
+      return dev.is_system === true || dev.is_system === 'true' || dev.is_system === 1 || dev.is_system === '1';
+    }
+
     // 智能统一状态判定方法
     function getDeviceStatus(dev) {
       if (!dev) return '库房中';
@@ -550,7 +560,7 @@
 
         // 3. 智能链条判定：如果是系统主设备，获取其下所有子设备
         currentDevice.subDevices = [];
-        if (currentDevice.is_system) {
+        if (isDeviceSystem(currentDevice)) {
           const { data: subData } = await supabaseClient
             .from('devices')
             .select('*')
@@ -587,6 +597,16 @@
       document.getElementById('device-owner').innerText = currentDevice.owner || "暂无";
       document.getElementById('device-location').innerText = currentDevice.location || "暂无";
 
+      // 🌟 动态控制详情页的系统整体高亮标签
+      const sysTagEl = document.getElementById('device-system-tag');
+      if (sysTagEl) {
+        if (isDeviceSystem(currentDevice)) {
+          sysTagEl.classList.remove('hidden');
+        } else {
+          sysTagEl.classList.add('hidden');
+        }
+      }
+
       const statusBadge = document.getElementById('device-status-badge');
       const borrowForm = document.getElementById('action-borrow');
       const returnRequestForm = document.getElementById('action-return-request');
@@ -615,7 +635,7 @@
           </div>
           <p class="text-[11px] text-slate-500">当前系统整体状态：<span class="font-semibold text-blue-600">${pStatus}</span></p>
         `;
-      } else if (currentDevice.is_system && currentDevice.subDevices && currentDevice.subDevices.length > 0) {
+      } else if (isDeviceSystem(currentDevice) && currentDevice.subDevices && currentDevice.subDevices.length > 0) {
         relationBox.classList.remove('hidden');
         const subListHtml = currentDevice.subDevices.map(sub => {
           const sStatus = getDeviceStatus(sub);
@@ -670,7 +690,7 @@
         
         // 动态修改表单标题以明确借出类型
         const titleEl = document.getElementById('borrow-form-title');
-        if (currentDevice.is_system) {
+        if (isDeviceSystem(currentDevice)) {
           titleEl.innerText = "登记借用信息 (整套系统级借出)";
         } else {
           titleEl.innerText = "登记借用信息";
@@ -803,7 +823,7 @@
         if (error) throw error;
 
         // 智能级联：如果是系统主设备，且状态修改为“已坏/库房中”，自动清理其关联的所有子设备
-        if (currentDevice.is_system && (status === '库房中' || status === '已坏')) {
+        if (isDeviceSystem(currentDevice) && (status === '库房中' || status === '已坏')) {
           await supabaseClient
             .from('devices')
             .update({
@@ -861,7 +881,7 @@
           });
 
         // 3. 智能级联：如果是系统级借出，自动将其子设备全部更新为借出状态
-        if (currentDevice.is_system) {
+        if (isDeviceSystem(currentDevice)) {
           const { error: subError } = await supabaseClient
             .from('devices')
             .update({
@@ -875,7 +895,7 @@
           if (subError) throw subError;
         }
 
-        alert(`登记成功！你已成功借出设备${currentDevice.is_system ? '（整套系统）' : ''}。`);
+        alert(`登记成功！你已成功借出设备${isDeviceSystem(currentDevice) ? '（整套系统）' : ''}。`);
         showDetail(currentDevice.device_id);
       } catch (err) {
         alert("登记失败: " + err.message);
@@ -894,7 +914,7 @@
         if (devError) throw devError;
 
         // 2. 智能级联：如果归还是系统整体，自动将其子设备全部更新为待确认归还状态
-        if (currentDevice.is_system) {
+        if (isDeviceSystem(currentDevice)) {
           const { error: subError } = await supabaseClient
             .from('devices')
             .update({ status: '待确认归还' })
@@ -965,11 +985,11 @@
           else if (status === '已坏') badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
           else badgeColor = 'bg-emerald-100 text-emerald-700 border-emerald-200';
 
-          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+          const sysTag = isDeviceSystem(dev) ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
 
           // 🌟 如果是系统整体，且在库房中，显示一键借用按钮
           let quickBorrowBtn = '';
-          if (dev.is_system && status === '库房中') {
+          if (isDeviceSystem(dev) && status === '库房中') {
             quickBorrowBtn = `
               <button onclick="event.stopPropagation(); quickBorrowSystem('${dev.device_id}', '${dev.name}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
                 ⚡ 一键借用整套系统
@@ -1161,7 +1181,7 @@
             relationshipInfo = `<p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>`;
           }
 
-          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+          const sysTag = isDeviceSystem(dev) ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
 
           if (status === '待确认归还') {
             badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
@@ -1192,7 +1212,7 @@
                 </button>
               `;
             }
-          } else if (status === '已坏') {
+          } else if (status === '开设已坏' || status === '已坏') {
             badgeColor = 'bg-rose-100 text-rose-700 border-rose-200';
             statusText = "已坏";
           } else {
@@ -1402,7 +1422,7 @@
         if (devError) throw devError;
 
         // 2. 智能级联：如果是系统整体，自动更新其子设备
-        if (dev.is_system) {
+        if (isDeviceSystem(dev)) {
           const { error: subError } = await supabaseClient
             .from('devices')
             .update({ status: '待确认归还' })
@@ -1464,7 +1484,7 @@
         }
 
         listContainer.innerHTML = data.map(dev => {
-          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+          const sysTag = isDeviceSystem(dev) ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
           return `
             <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center text-left">
               <div class="space-y-1">
@@ -1556,7 +1576,7 @@
           });
 
         // 3. 智能级联：如果是系统整体确认归还，则将其下的所有子设备也一同自动归还入库
-        if (devInfo && devInfo.is_system) {
+        if (devInfo && isDeviceSystem(devInfo)) {
           const { error: subError } = await supabaseClient
             .from('devices')
             .update({
@@ -1702,5 +1722,3 @@
   </script>
 </body>
 </html>
-
-
