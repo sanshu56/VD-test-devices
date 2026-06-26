@@ -58,7 +58,7 @@
         </div>
       </div>
 
-      <!-- 🌟 新增：设备清单快速查询卡片 -->
+      <!-- 设备清单快速查询卡片 -->
       <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
         <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5">
           <span>📊</span> 设备清单快速查询
@@ -88,7 +88,7 @@
         </div>
       </div>
 
-      <!-- 数据库真实设备快捷测试通道 -->
+      <!-- 💡 数据库真实设备快捷测试通道 -->
       <div id="test-devices-section" class="bg-amber-50 rounded-2xl p-6 shadow-sm border border-amber-100 space-y-4 hidden">
         <h3 class="text-md font-bold text-amber-800 flex items-center gap-1.5">
           <span>💡</span> 数据库内真实设备 (快捷测试)
@@ -258,7 +258,7 @@
     let supabaseClient = null;
     let currentDevice = null;
     let html5QrScanner = null;
-    let activeQueryTab = 'admin'; // 'admin' 或 'borrower'
+    let activeQueryTab = 'admin';
 
     // 智能 CDN 自动避让与重试加载函数
     function loadScriptPromise(urls) {
@@ -358,8 +358,6 @@
       }
 
       showGlobalLoading(false);
-
-      // 初始化查询列表的默认 Tab 状态
       switchQueryTab('admin');
 
       const urlParams = new URLSearchParams(window.location.search);
@@ -388,7 +386,6 @@
       loadRecentLogs();
       loadTestDevices();
       
-      // 刷新当前的查询列表
       if (!document.getElementById('query-results-box').classList.contains('hidden')) {
         runListQuery();
       }
@@ -564,7 +561,7 @@
       }
     }
 
-    // ================= 🌟 新增：清单查询交互逻辑 =================
+    // ================= 清单查询交互及智能排序逻辑 =================
 
     // 切换查询标签页
     function switchQueryTab(tab) {
@@ -574,7 +571,6 @@
       const input = document.getElementById('query-name-input');
       const resultsBox = document.getElementById('query-results-box');
 
-      // 清空上次查询结果
       resultsBox.classList.add('hidden');
       document.getElementById('query-results-list').innerHTML = '';
 
@@ -591,7 +587,7 @@
       }
     }
 
-    // 执行设备清单查询
+    // 执行设备清单查询（带智能优先级排序）
     async function runListQuery() {
       const name = document.getElementById('query-name-input').value.trim();
       const resultsBox = document.getElementById('query-results-box');
@@ -610,23 +606,19 @@
         let error = null;
 
         if (activeQueryTab === 'admin') {
-          // 记住管理员名字
           localStorage.setItem('vd_query_admin_name', name);
           const res = await supabaseClient
             .from('devices')
             .select('*')
-            .eq('owner', name)
-            .order('device_id', { ascending: true });
+            .eq('owner', name);
           data = res.data;
           error = res.error;
         } else {
-          // 记住借用人名字
           localStorage.setItem('vd_query_borrower_name', name);
           const res = await supabaseClient
             .from('devices')
             .select('*')
-            .eq('current_borrower', name)
-            .order('device_id', { ascending: true });
+            .eq('current_borrower', name);
           data = res.data;
           error = res.error;
         }
@@ -638,6 +630,29 @@
           return;
         }
 
+        // 🌟 核心升级：智能多级排序
+        // 1. 待确认归还 (权重 1) 排最前
+        // 2. 已借出 (权重 2) 排中间
+        // 3. 库房中 (权重 3) 排最后
+        // 4. 同等状态下，按设备 ID 升序排列
+        data.sort((a, b) => {
+          const getWeight = (item) => {
+            const status = item.status || '库房中';
+            if (status === '待确认归还') return 1;
+            if (item.current_borrower || status === '已借出') return 2;
+            return 3;
+          };
+
+          const weightA = getWeight(a);
+          const weightB = getWeight(b);
+
+          if (weightA !== weightB) {
+            return weightA - weightB; // 升序，1 最小，排最前
+          }
+          // 权重相同，按 ID 升序
+          return a.device_id.localeCompare(b.device_id);
+        });
+
         resultsList.innerHTML = data.map(dev => {
           const status = dev.status || '库房中';
           let badgeColor = '';
@@ -647,7 +662,6 @@
           if (status === '待确认归还') {
             badgeColor = 'bg-amber-100 text-amber-700 border-amber-200';
             statusText = "待确认归还";
-            // 如果是管理员在查，直接在列表里提供“一键确认”按钮
             if (activeQueryTab === 'admin') {
               actionBtn = `
                 <button onclick="approveReturnFromQuery('${dev.device_id}', '${dev.current_borrower}')" class="mt-2 w-full bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold py-1.5 px-2 rounded-lg transition active:scale-95 shadow-sm">
@@ -742,12 +756,11 @@
       }
     }
 
-    // 确认归还入库逻辑（支持静默缓存密码、多处列表刷新）
+    // 确认归还入库逻辑
     async function approveReturn(deviceId, borrower) {
       let pin = localStorage.getItem('vd_admin_pin') || "";
       let isAutoChecked = false;
 
-      // 1. 自动校验缓存密码
       if (pin) {
         const { data, error } = await supabaseClient
           .from('devices')
@@ -760,7 +773,6 @@
         }
       }
 
-      // 2. 校验失败，提示输入密码
       if (!isAutoChecked) {
         pin = prompt("请输入该设备的管理员确认密码：");
         if (pin === null) return;
@@ -785,7 +797,6 @@
         localStorage.setItem('vd_admin_pin', pin);
       }
 
-      // 3. 执行归还数据更新
       try {
         const { error: devError } = await supabaseClient
           .from('devices')
@@ -809,14 +820,13 @@
 
         alert("🎉 确认成功！设备已安全归还并入库。");
 
-        // 🌟 智能多列表同步刷新
         if (!document.getElementById('view-admin').classList.contains('hidden')) {
-          loadAdminRequests(); // 刷新管理员面板
+          loadAdminRequests();
         }
         if (!document.getElementById('query-results-box').classList.contains('hidden')) {
-          runListQuery(); // 刷新首页查询清单
+          runListQuery();
         }
-        loadRecentLogs(); // 刷新最近动态
+        loadRecentLogs();
       } catch (err) {
         alert("确认入库失败: " + err.message);
       }
