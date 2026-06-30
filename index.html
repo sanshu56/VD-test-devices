@@ -6,9 +6,30 @@
   <title>VD测试设备管理系统</title>
   <style>
     .hidden { display: none !important; }
+    @keyframes vd-fade-in { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+    @keyframes vd-slide-up { from { opacity: 0; transform: translateY(20px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
+    .vd-anim-fade { animation: vd-fade-in 0.2s ease-out; }
+    .vd-anim-modal { animation: vd-slide-up 0.22s cubic-bezier(0.16, 1, 0.3, 1); }
   </style>
 </head>
 <body class="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col">
+
+  <!-- ================= 统一 Toast 轻提示容器 ================= -->
+  <div id="vd-toast-container" class="fixed top-4 left-1/2 -translate-x-1/2 z-[10000] flex flex-col items-center gap-2 pointer-events-none w-full max-w-sm px-4"></div>
+
+  <!-- ================= 统一弹窗 (Modal/Confirm/Prompt) ================= -->
+  <div id="vd-modal-mask" class="hidden fixed inset-0 bg-black/40 backdrop-blur-sm z-[10001] flex items-center justify-center p-5">
+    <div id="vd-modal-box" class="vd-anim-modal bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden">
+      <div class="p-6 space-y-3 text-center">
+        <div id="vd-modal-icon" class="text-4xl"></div>
+        <h3 id="vd-modal-title" class="text-lg font-bold text-slate-800"></h3>
+        <p id="vd-modal-msg" class="text-sm text-slate-500 whitespace-pre-wrap leading-relaxed"></p>
+        <input id="vd-modal-input" type="text" class="hidden w-full border border-slate-200 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-blue-500 text-center" />
+      </div>
+      <div id="vd-modal-actions" class="flex gap-2 p-4 pt-0"></div>
+    </div>
+  </div>
+
 
   <!-- 全局依赖加载遮罩层 -->
   <div id="global-loading" class="fixed inset-0 bg-slate-50 flex flex-col items-center justify-center z-[9999] p-6 text-center">
@@ -24,6 +45,7 @@
         <span>🚙</span> VD测试设备管理系统
       </h1>
       <div class="flex gap-2">
+        <button onclick="openStatsPanel()" class="text-xs bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-lg transition">统计报表</button>
         <button onclick="openAdminPanel()" class="text-xs bg-blue-700 hover:bg-blue-800 px-2.5 py-1.5 rounded-lg transition">管理员面板</button>
         <button onclick="goHome()" class="text-xs bg-blue-500 hover:bg-blue-750 px-2.5 py-1.5 rounded-lg transition">首页</button>
       </div>
@@ -89,6 +111,15 @@
             <!-- 动态渲染查询结果 -->
           </div>
         </div>
+      </div>
+
+      <!-- 🔴 超期设备提醒卡片 (有超期时才显示) -->
+      <div id="overdue-card" class="hidden bg-white rounded-2xl p-6 shadow-sm border border-rose-200 space-y-3">
+        <h3 class="text-md font-bold text-rose-600 flex items-center gap-1.5">
+          <span>⏰</span> 超期未还提醒
+          <span id="overdue-count-badge" class="ml-1 bg-rose-100 text-rose-700 text-xs font-extrabold px-2 py-0.5 rounded-full">0</span>
+        </h3>
+        <div id="overdue-list" class="space-y-2 max-h-72 overflow-y-auto pr-1"></div>
       </div>
 
       <!-- 最近操作动态 -->
@@ -333,6 +364,42 @@
       </div>
     </div>
 
+    <!-- ================= 页面 5：借还统计报表 (Stats) ================= -->
+    <div id="view-stats" class="hidden space-y-6">
+      <!-- 概览数据卡片 -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-4">
+        <div class="flex justify-between items-center">
+          <h2 class="text-xl font-bold text-slate-700 flex items-center gap-1.5"><span>📈</span> 借还统计报表</h2>
+          <button onclick="goHome()" class="text-xs text-rose-500 font-bold">退出</button>
+        </div>
+        <div id="stats-overview" class="grid grid-cols-2 gap-3">
+          <p class="col-span-2 text-slate-400 text-center py-4 text-sm">正在统计数据...</p>
+        </div>
+      </div>
+
+      <!-- 设备借用热度排行 -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-3">
+        <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5"><span>🔥</span> 设备借用热度 TOP 10</h3>
+        <div id="stats-hot-devices" class="space-y-2"></div>
+      </div>
+
+      <!-- 借用人活跃排行 -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-3">
+        <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5"><span>🏆</span> 借用人活跃 TOP 10</h3>
+        <div id="stats-top-borrowers" class="space-y-2"></div>
+      </div>
+
+      <!-- 单设备历史查询 -->
+      <div class="bg-white rounded-2xl p-6 shadow-sm border border-slate-100 space-y-3">
+        <h3 class="text-md font-bold text-slate-700 flex items-center gap-1.5"><span>🕘</span> 单台设备完整借用历史</h3>
+        <div class="flex gap-2">
+          <input type="text" id="stats-history-input" placeholder="输入设备ID或名称关键词" class="flex-grow border border-slate-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:border-blue-500">
+          <button onclick="loadDeviceHistory()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2.5 rounded-xl font-bold text-xs transition active:scale-95">查询历史</button>
+        </div>
+        <div id="stats-history-list" class="space-y-2 max-h-96 overflow-y-auto pr-1"></div>
+      </div>
+    </div>
+
   </main>
 
   <!-- ================= 核心 JavaScript 逻辑 ================= -->
@@ -351,7 +418,133 @@
     let currentDevice = null;
     let html5QrScanner = null;
     let activeQueryTab = 'admin';
-function getDeviceStatus(dev) {
+
+    // ================= 🌟 统一 UI 组件 (Toast / Modal / Confirm / Prompt) =================
+    function showToast(message, type = 'success', duration = 2600) {
+      const container = document.getElementById('vd-toast-container');
+      if (!container) { console.log(message); return; }
+      const colors = {
+        success: 'bg-emerald-600',
+        error: 'bg-rose-600',
+        warn: 'bg-amber-500',
+        info: 'bg-slate-800'
+      };
+      const icons = { success: '✅', error: '❌', warn: '⚠️', info: 'ℹ️' };
+      const el = document.createElement('div');
+      el.className = `vd-anim-fade pointer-events-auto ${colors[type] || colors.info} text-white text-sm font-medium px-4 py-3 rounded-xl shadow-lg flex items-start gap-2 max-w-full`;
+      el.innerHTML = `<span class="shrink-0">${icons[type] || ''}</span><span class="whitespace-pre-wrap break-words">${message}</span>`;
+      container.appendChild(el);
+      setTimeout(() => {
+        el.style.transition = 'opacity 0.3s, transform 0.3s';
+        el.style.opacity = '0';
+        el.style.transform = 'translateY(-8px)';
+        setTimeout(() => el.remove(), 300);
+      }, duration);
+    }
+
+    // 通用弹窗内核：返回 Promise，resolve 值视模式而定
+    function _openModal({ icon = '', title = '', msg = '', input = false, inputValue = '', inputType = 'text', placeholder = '', okText = '确定', cancelText = null, okColor = 'bg-blue-600 hover:bg-blue-700' }) {
+      return new Promise((resolve) => {
+        const mask = document.getElementById('vd-modal-mask');
+        const box = document.getElementById('vd-modal-box');
+        document.getElementById('vd-modal-icon').textContent = icon;
+        document.getElementById('vd-modal-icon').classList.toggle('hidden', !icon);
+        document.getElementById('vd-modal-title').textContent = title;
+        document.getElementById('vd-modal-title').classList.toggle('hidden', !title);
+        document.getElementById('vd-modal-msg').textContent = msg;
+        document.getElementById('vd-modal-msg').classList.toggle('hidden', !msg);
+
+        const inputEl = document.getElementById('vd-modal-input');
+        if (input) {
+          inputEl.classList.remove('hidden');
+          inputEl.type = inputType;
+          inputEl.value = inputValue || '';
+          inputEl.placeholder = placeholder || '';
+        } else {
+          inputEl.classList.add('hidden');
+        }
+
+        const actions = document.getElementById('vd-modal-actions');
+        actions.innerHTML = '';
+
+        const close = (val) => {
+          mask.classList.add('hidden');
+          resolve(val);
+        };
+
+        if (cancelText !== null) {
+          const cancelBtn = document.createElement('button');
+          cancelBtn.className = 'flex-1 bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold py-2.5 rounded-xl transition text-sm active:scale-95';
+          cancelBtn.textContent = cancelText;
+          cancelBtn.onclick = () => close(input ? null : false);
+          actions.appendChild(cancelBtn);
+        }
+
+        const okBtn = document.createElement('button');
+        okBtn.className = `flex-1 ${okColor} text-white font-semibold py-2.5 rounded-xl transition text-sm shadow-md active:scale-95`;
+        okBtn.textContent = okText;
+        okBtn.onclick = () => close(input ? inputEl.value.trim() : true);
+        actions.appendChild(okBtn);
+
+        mask.classList.remove('hidden');
+        box.classList.remove('vd-anim-modal'); void box.offsetWidth; box.classList.add('vd-anim-modal');
+        if (input) setTimeout(() => inputEl.focus(), 50);
+      });
+    }
+
+    // 替代 alert：信息提示
+    function showAlert(msg, title = '提示', icon = 'ℹ️') {
+      return _openModal({ icon, title, msg, okText: '知道了', cancelText: null });
+    }
+    // 替代 confirm：返回 true/false
+    function showConfirm(msg, { title = '请确认', icon = '❓', okText = '确定', cancelText = '取消', okColor = 'bg-blue-600 hover:bg-blue-700' } = {}) {
+      return _openModal({ icon, title, msg, okText, cancelText, okColor });
+    }
+    // 替代 prompt：返回字符串或 null
+    function showPrompt(msg, { title = '请输入', icon = '✏️', inputValue = '', inputType = 'text', placeholder = '', okText = '确定', cancelText = '取消' } = {}) {
+      return _openModal({ icon, title, msg, input: true, inputValue, inputType, placeholder, okText, cancelText });
+    }
+
+    // ================= 🌟 统一写日志工具 =================
+    // 兼容性：若 borrow_logs 没有 remark 列，会自动去掉 remark 重试一次
+    let _logRemarkSupported = true;
+    async function writeLog({ device_id, borrower_name, action_type, expected_return_date = null, remark = null }) {
+      try {
+        const payload = { device_id, borrower_name, action_type };
+        if (expected_return_date) payload.expected_return_date = expected_return_date;
+        if (_logRemarkSupported && remark) payload.remark = remark;
+        const { error } = await supabaseClient.from('borrow_logs').insert(payload);
+        if (error) {
+          // 列不存在等错误，降级重试（去掉 remark）
+          if (_logRemarkSupported && /remark/i.test(error.message || '')) {
+            _logRemarkSupported = false;
+            const fallback = { device_id, borrower_name, action_type };
+            if (expected_return_date) fallback.expected_return_date = expected_return_date;
+            await supabaseClient.from('borrow_logs').insert(fallback);
+          } else {
+            console.warn('写日志失败:', error.message);
+          }
+        }
+      } catch (e) {
+        console.warn('写日志异常:', e);
+      }
+    }
+
+    // ================= 🌟 超期判定工具 =================
+    // 返回：null=未超期/无日期；数字=已超期天数(>=1)
+    function getOverdueDays(dev) {
+      if (!dev || !dev.expected_return_date) return null;
+      const status = getDeviceStatus(dev);
+      if (status !== '已借出' && status !== '待确认归还') return null;
+      const due = new Date(dev.expected_return_date + 'T23:59:59');
+      if (isNaN(due.getTime())) return null;
+      const now = new Date();
+      const diffMs = now.getTime() - due.getTime();
+      if (diffMs <= 0) return null;
+      return Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    }
+
+    function getDeviceStatus(dev) {
       if (!dev) return '库房中';
       let status = dev.status || '库房中';
       if (status === '可用') status = '库房中';
@@ -486,9 +679,11 @@ function getDeviceStatus(dev) {
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-detail').classList.add('hidden');
       document.getElementById('view-admin').classList.add('hidden');
+      document.getElementById('view-stats').classList.add('hidden');
       document.getElementById('detail-edit-form').classList.add('hidden');
       stopScanner();
       loadRecentLogs();
+      loadOverdueAlerts();
       
       if (!document.getElementById('query-results-box').classList.contains('hidden')) {
         if (activeQueryTab === 'overview') {
@@ -503,6 +698,7 @@ function getDeviceStatus(dev) {
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-admin').classList.add('hidden');
+      document.getElementById('view-stats').classList.add('hidden');
       document.getElementById('detail-edit-form').classList.add('hidden');
       document.getElementById('view-detail').classList.remove('hidden');
       
@@ -680,11 +876,11 @@ function getDeviceStatus(dev) {
       }
 
       if (!isAutoChecked) {
-        pin = prompt("请输入该设备的管理员密码以编辑信息：");
+        pin = await showPrompt("请输入该设备的管理员密码以编辑信息：", { title: '管理员验证', icon: '🔒', inputType: 'password', placeholder: '管理员密码' });
         if (pin === null) return;
         pin = pin.trim();
         if (!pin) {
-          alert("密码不能为空！");
+          showToast("密码不能为空！", 'warn');
           return;
         }
         const { data, error } = await supabaseClient
@@ -693,7 +889,7 @@ function getDeviceStatus(dev) {
           .eq('device_id', currentDevice.device_id)
           .eq('admin_pin', pin);
         if (error || !data || data.length === 0) {
-          alert("❌ 密码错误，您无权编辑此设备信息！");
+          showToast("密码错误，您无权编辑此设备信息！", 'error');
           return;
         }
         localStorage.setItem('vd_admin_pin', pin);
@@ -748,13 +944,15 @@ function getDeviceStatus(dev) {
       };
 
       const oldStatus = getDeviceStatus(currentDevice);
+      const prevBorrower = currentDevice.current_borrower;
+      let clearedBorrow = false;
       if ((status === '库房中' || status === '已坏') && (oldStatus === '已借出' || oldStatus === '待确认归还')) {
-        if (!confirm("⚠️ 检测到您将设备状态修改为了非借出状态，系统将自动清除当前的借用人和借用时间。是否确定修改？")) {
-          return;
-        }
+        const ok = await showConfirm("检测到您将设备状态修改为非借出状态，系统将自动清除当前的借用人和借用时间。是否确定修改？", { icon: '⚠️', title: '清除借用记录', okText: '确定修改', okColor: 'bg-amber-500 hover:bg-amber-600' });
+        if (!ok) return;
         updateData.current_borrower = null;
         updateData.borrow_time = null;
         updateData.expected_return_date = null;
+        clearedBorrow = true;
       }
 
       try {
@@ -776,11 +974,27 @@ function getDeviceStatus(dev) {
             .eq('parent_system_id', currentDevice.device_id);
         }
 
-        alert("🎉 设备信息更新成功！");
+        // 📝 操作日志：记录编辑动作（以及因改状态而触发的归还）
+        await writeLog({
+          device_id: currentDevice.device_id,
+          borrower_name: localStorage.getItem('vd_admin_name') || currentDevice.owner || '管理员',
+          action_type: 'edit',
+          remark: `编辑设备信息${oldStatus !== status ? `；状态: ${oldStatus} → ${status}` : ''}`
+        });
+        if (clearedBorrow) {
+          await writeLog({
+            device_id: currentDevice.device_id,
+            borrower_name: prevBorrower || '未知',
+            action_type: 'return',
+            remark: '管理员编辑设备时清除借用记录'
+          });
+        }
+
+        showToast("设备信息更新成功！", 'success');
         document.getElementById('detail-edit-form').classList.add('hidden');
         showDetail(currentDevice.device_id);
       } catch (err) {
-        alert("修改失败: " + err.message);
+        showToast("修改失败: " + err.message, 'error');
       }
     }
 
@@ -789,7 +1003,7 @@ function getDeviceStatus(dev) {
       const expectedReturnDate = document.getElementById('expected-return-date').value;
 
       if (!borrowerName) {
-        alert("请输入你的姓名！");
+        showToast("请输入你的姓名！", 'warn');
         return;
       }
 
@@ -810,11 +1024,22 @@ function getDeviceStatus(dev) {
           const skipped = data && data.skipped_count != null ? data.skipped_count : 0;
           const skippedNames = data && data.skipped_names ? data.skipped_names : '';
 
-          let msg = `🎉 登记成功！您已借出整套系统中 ${borrowed} 个可用子设备。`;
+          // 📝 系统整体借用补记日志（RPC 不一定写日志，这里在前端补一条系统级记录）
+          await writeLog({
+            device_id: currentDevice.device_id,
+            borrower_name: borrowerName,
+            action_type: 'borrow',
+            expected_return_date: expectedReturnDate || null,
+            remark: `整套系统借出，含 ${borrowed} 个子设备`
+          });
+
+          let msg = `登记成功！您已借出整套系统中 ${borrowed} 个可用子设备。`;
           if (skipped > 0) {
-            msg += `\n\n⚠️ 有 ${skipped} 个子设备已被他人借用，已自动跳过：\n${skippedNames}`;
+            msg += `\n\n有 ${skipped} 个子设备已被他人借用，已自动跳过：\n${skippedNames}`;
+            await showAlert(msg, '整套借用完成', '🎉');
+          } else {
+            showToast(msg, 'success');
           }
-          alert(msg);
           showDetail(currentDevice.device_id);
           return;
         }
@@ -831,19 +1056,17 @@ function getDeviceStatus(dev) {
           .eq('device_id', currentDevice.device_id);
         if (devError) throw devError;
 
-        await supabaseClient
-          .from('borrow_logs')
-          .insert({
-            device_id: currentDevice.device_id,
-            borrower_name: borrowerName,
-            action_type: 'borrow',
-            expected_return_date: expectedReturnDate || null
-          });
+        await writeLog({
+          device_id: currentDevice.device_id,
+          borrower_name: borrowerName,
+          action_type: 'borrow',
+          expected_return_date: expectedReturnDate || null
+        });
 
-        alert("登记成功！你已成功借出设备。");
+        showToast("登记成功！你已成功借出设备。", 'success');
         showDetail(currentDevice.device_id);
       } catch (err) {
-        alert("登记失败: " + err.message);
+        showToast("登记失败: " + err.message, 'error');
       }
     }
 
@@ -867,10 +1090,17 @@ function getDeviceStatus(dev) {
           if (subError) throw subError;
         }
 
-        alert("归还申请提交成功！请联系管理员确认入库。");
+        await writeLog({
+          device_id: currentDevice.device_id,
+          borrower_name: borrower || '未知',
+          action_type: 'return_request',
+          remark: '提交归还申请，等待管理员确认'
+        });
+
+        showToast("归还申请提交成功！请联系管理员确认入库。", 'success');
         showDetail(currentDevice.device_id);
       } catch (err) {
-        alert("申请归还失败: " + err.message);
+        showToast("申请归还失败: " + err.message, 'error');
       }
     }
 
@@ -878,7 +1108,7 @@ function getDeviceStatus(dev) {
     async function searchManualId() {
       const query = document.getElementById('manual-id-input').value.trim();
       if (!query) {
-        alert("请输入搜索关键词！");
+        showToast("请输入搜索关键词！", 'warn');
         return;
       }
 
@@ -929,8 +1159,12 @@ function getDeviceStatus(dev) {
             `;
           }
 
+          const od = getOverdueDays(dev);
+          const overdueTag = od ? `<p class="text-[10px] text-rose-600 font-bold mt-1">⏰ 已超期 ${od} 天 (预计 ${dev.expected_return_date})</p>` : '';
+          const cardBorder = od ? 'border-rose-300 bg-rose-50' : 'border-slate-100 bg-slate-50';
+
           return `
-            <div onclick="showDetail('${dev.device_id}')" class="p-3 bg-slate-50 hover:bg-slate-100 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm cursor-pointer transition active:scale-[0.98]">
+            <div onclick="showDetail('${dev.device_id}')" class="p-3 ${cardBorder} hover:bg-slate-100 rounded-xl border text-xs space-y-1 text-left shadow-sm cursor-pointer transition active:scale-[0.98]">
               <div class="flex justify-between items-start gap-2">
                 <div>
                   <h4 class="font-bold text-slate-800 flex items-center gap-1">${dev.name} ${sysTag}</h4>
@@ -940,6 +1174,7 @@ function getDeviceStatus(dev) {
               </div>
               <p class="text-[11px] text-slate-600 font-medium mt-1">🛠️ 保管管理员: <span class="text-blue-600 font-bold">${dev.owner || '暂无'}</span></p>
               <p class="text-[10px] text-slate-400">📍 存放位置: ${dev.location || '暂无'}</p>
+              ${overdueTag}
               ${quickBorrowBtn}
             </div>
           `;
@@ -953,16 +1188,17 @@ function getDeviceStatus(dev) {
     // ================= 一键借用整套系统逻辑 =================
     async function quickBorrowSystem(systemId, systemName) {
       let borrowerName = localStorage.getItem('vd_user_nickname') || "";
-      borrowerName = prompt("请输入您的真实姓名以确认借用整套系统：", borrowerName);
+      borrowerName = await showPrompt("请输入您的真实姓名以确认借用整套系统：", { title: `借用【${systemName}】`, icon: '⚡', inputValue: borrowerName, placeholder: '你的真实姓名', okText: '下一步' });
       if (borrowerName === null) return;
       borrowerName = borrowerName.trim();
       if (!borrowerName) {
-        alert("借用人姓名不能为空！");
+        showToast("借用人姓名不能为空！", 'warn');
         return;
       }
       localStorage.setItem('vd_user_nickname', borrowerName);
 
-      const expectedReturnDate = prompt("请输入预计归还日期 (格式如: 2026-07-30，可直接留空不填)：");
+      const expectedReturnDate = await showPrompt("请选择预计归还日期 (可留空不填)：", { title: '预计归还日期', icon: '📅', inputType: 'date', okText: '确认借用' });
+      if (expectedReturnDate === null) return;
       let formattedDate = null;
       if (expectedReturnDate && expectedReturnDate.trim()) {
         formattedDate = expectedReturnDate.trim();
@@ -982,16 +1218,26 @@ function getDeviceStatus(dev) {
         const skipped = data && data.skipped_count != null ? data.skipped_count : 0;
         const skippedNames = data && data.skipped_names ? data.skipped_names : '';
 
-        let msg = `🎉 借用成功！您已借出【${systemName}】系统中 ${borrowed} 个可用子设备。`;
+        await writeLog({
+          device_id: systemId,
+          borrower_name: borrowerName,
+          action_type: 'borrow',
+          expected_return_date: formattedDate,
+          remark: `一键借出整套系统，含 ${borrowed} 个子设备`
+        });
+
+        let msg = `借用成功！您已借出【${systemName}】系统中 ${borrowed} 个可用子设备。`;
         if (skipped > 0) {
-          msg += `\n\n⚠️ 有 ${skipped} 个子设备已被他人借用，已自动跳过：\n${skippedNames}`;
+          msg += `\n\n有 ${skipped} 个子设备已被他人借用，已自动跳过：\n${skippedNames}`;
+          await showAlert(msg, '整套借用完成', '🎉');
+        } else {
+          showToast(msg, 'success');
         }
-        alert(msg);
 
         searchManualId();
         loadRecentLogs();
       } catch (err) {
-        alert("一键借用失败: " + err.message);
+        showToast("一键借用失败: " + err.message, 'error');
       } finally {
         showGlobalLoading(false);
       }
@@ -1038,7 +1284,7 @@ function getDeviceStatus(dev) {
       const resultsList = document.getElementById('query-results-list');
 
       if (!name) {
-        alert("请输入姓名进行查询！");
+        showToast("请输入姓名进行查询！", 'warn');
         return;
       }
 
@@ -1137,8 +1383,12 @@ function getDeviceStatus(dev) {
             ? `<p class="text-[10px] text-slate-400 mt-1">⏰ 借用时间: ${new Date(dev.borrow_time).toLocaleString('zh-CN')}</p>`
             : '';
 
+          const od = getOverdueDays(dev);
+          const overdueTag = od ? `<p class="text-[10px] text-rose-600 font-bold mt-1">⏰ 已超期 ${od} 天！</p>` : '';
+          const cardCls = od ? 'bg-rose-50 border-rose-300' : 'bg-slate-50 border-slate-100';
+
           return `
-            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1 text-left shadow-sm">
+            <div class="p-3 ${cardCls} rounded-xl border text-xs space-y-1 text-left shadow-sm">
               <div class="flex justify-between items-start gap-2">
                 <div onclick="showDetail('${dev.device_id}')" class="cursor-pointer flex-grow">
                   <h4 class="font-bold text-slate-800 hover:text-blue-600 transition flex items-center gap-1">${dev.name} ${sysTag}</h4>
@@ -1149,6 +1399,7 @@ function getDeviceStatus(dev) {
               ${relationshipInfo}
               ${borrowTimeStr}
               ${extraInfo}
+              ${overdueTag}
               ${actionBtn}
             </div>
           `;
@@ -1277,7 +1528,8 @@ function getDeviceStatus(dev) {
     }
 
     async function requestReturnFromQuery(deviceId) {
-      if (!confirm("确定要申请归还该设备吗？\n系统将自动提交给保管管理员确认。")) return;
+      const ok = await showConfirm("确定要申请归还该设备吗？\n系统将自动提交给保管管理员确认。", { icon: '🔄', title: '申请归还', okText: '确认申请', okColor: 'bg-amber-500 hover:bg-amber-600' });
+      if (!ok) return;
       try {
         const { data: dev, error: fetchErr } = await supabaseClient
           .from('devices').select('*').eq('device_id', deviceId).single();
@@ -1285,7 +1537,7 @@ function getDeviceStatus(dev) {
         if (!dev) throw new Error("未找到该设备信息");
 
         if (!dev.current_borrower) {
-          alert("该设备不在借出状态，无需归还！");
+          showToast("该设备不在借出状态，无需归还！", 'warn');
           return;
         }
 
@@ -1300,11 +1552,18 @@ function getDeviceStatus(dev) {
           if (subError) throw subError;
         }
 
-        alert("🎉 归还申请提交成功！请联系管理员在系统中确认。");
+        await writeLog({
+          device_id: deviceId,
+          borrower_name: dev.current_borrower || '未知',
+          action_type: 'return_request',
+          remark: '清单页提交归还申请'
+        });
+
+        showToast("归还申请提交成功！请联系管理员确认。", 'success');
         runListQuery();
         loadRecentLogs();
       } catch (err) {
-        alert("归还申请失败: " + err.message);
+        showToast("归还申请失败: " + err.message, 'error');
       }
     }
 
@@ -1317,8 +1576,13 @@ function getDeviceStatus(dev) {
       document.getElementById('view-home').classList.add('hidden');
       document.getElementById('view-scanner').classList.add('hidden');
       document.getElementById('view-detail').classList.add('hidden');
+      document.getElementById('view-stats').classList.add('hidden');
       document.getElementById('view-admin').classList.remove('hidden');
       stopScanner();
+      // 自动带出上次的管理员名字
+      const saved = localStorage.getItem('vd_admin_name');
+      const input = document.getElementById('admin-name-input');
+      if (saved && input && !input.value) input.value = saved;
     }
 
     function exitAdminPanel() {
@@ -1330,36 +1594,63 @@ function getDeviceStatus(dev) {
       const listContainer = document.getElementById('admin-request-list');
 
       if (!adminName) {
-        alert("请输入你的名字！");
+        showToast("请输入你的名字！", 'warn');
         return;
       }
+      localStorage.setItem('vd_admin_name', adminName);
 
       listContainer.innerHTML = `<p class="text-slate-400 text-center py-8">正在检索属于你的待办...</p>`;
 
       try {
-        const { data, error } = await supabaseClient
-          .from('devices').select('*').eq('owner', adminName).eq('status', '待确认归还');
+        // 名下全部设备：用于拆分"待确认归还"和"已借出但超期"
+        const { data: allMine, error } = await supabaseClient
+          .from('devices').select('*').eq('owner', adminName);
         if (error) throw error;
 
-        if (!data || data.length === 0) {
-          listContainer.innerHTML = `<p class="text-slate-400 text-center py-8 text-sm bg-white rounded-2xl border border-slate-100">🎉 暂无待确认的归还申请</p>`;
-          return;
+        const pending = (allMine || []).filter(d => getDeviceStatus(d) === '待确认归还');
+        const overdue = (allMine || []).filter(d => getOverdueDays(d) !== null);
+
+        let html = '';
+
+        // 超期分组（置顶警示）
+        if (overdue.length > 0) {
+          overdue.sort((a, b) => getOverdueDays(b) - getOverdueDays(a));
+          html += `<div class="bg-rose-50 rounded-2xl p-3 border border-rose-200 space-y-2">
+            <p class="text-xs font-bold text-rose-600 px-1">🚨 名下已超期未还 (${overdue.length})</p>`;
+          html += overdue.map(dev => {
+            const od = getOverdueDays(dev);
+            const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统</span>` : '';
+            return `
+              <div onclick="showDetail('${dev.device_id}')" class="bg-white rounded-xl p-3 border border-rose-100 cursor-pointer">
+                <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1">${dev.name} ${sysTag}</h4>
+                <p class="text-xs text-slate-400">借用人: <strong class="text-rose-600">${dev.current_borrower || '未知'}</strong></p>
+                <p class="text-[11px] text-rose-600 font-bold mt-0.5">已超期 ${od} 天 · 预计 ${dev.expected_return_date}</p>
+              </div>`;
+          }).join('');
+          html += `</div>`;
         }
 
-        listContainer.innerHTML = data.map(dev => {
-          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
-          return `
-            <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center text-left">
-              <div class="space-y-1">
-                <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1">${dev.name} ${sysTag}</h4>
-                <p class="text-xs text-slate-400">ID: ${dev.device_id} · 借用人: <strong class="text-slate-600">${dev.current_borrower}</strong></p>
+        // 待确认归还分组
+        if (pending.length === 0) {
+          html += `<p class="text-slate-400 text-center py-8 text-sm bg-white rounded-2xl border border-slate-100">🎉 暂无待确认的归还申请</p>`;
+        } else {
+          html += pending.map(dev => {
+            const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统整体</span>` : '';
+            return `
+              <div class="bg-white rounded-2xl p-4 shadow-sm border border-slate-100 flex justify-between items-center text-left">
+                <div class="space-y-1">
+                  <h4 class="font-bold text-slate-800 text-sm flex items-center gap-1">${dev.name} ${sysTag}</h4>
+                  <p class="text-xs text-slate-400">ID: ${dev.device_id} · 借用人: <strong class="text-slate-600">${dev.current_borrower}</strong></p>
+                </div>
+                <button onclick="approveReturn('${dev.device_id}', '${dev.current_borrower}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 shadow-sm">
+                  确认入库
+                </button>
               </div>
-              <button onclick="approveReturn('${dev.device_id}', '${dev.current_borrower}')" class="bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 shadow-sm">
-                确认入库
-              </button>
-            </div>
-          `;
-        }).join('');
+            `;
+          }).join('');
+        }
+
+        listContainer.innerHTML = html;
       } catch (err) {
         listContainer.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">加载失败: ${err.message}</p>`;
       }
@@ -1382,11 +1673,11 @@ function getDeviceStatus(dev) {
       }
 
       if (!isAutoChecked) {
-        pin = prompt("请输入该设备的管理员确认密码：");
+        pin = await showPrompt("请输入该设备的管理员确认密码：", { title: '管理员确认', icon: '🔒', inputType: 'password', placeholder: '管理员密码', okText: '验证' });
         if (pin === null) return;
         pin = pin.trim();
         if (!pin) {
-          alert("密码不能为空！");
+          showToast("密码不能为空！", 'warn');
           return;
         }
         const { data, error } = await supabaseClient
@@ -1395,7 +1686,7 @@ function getDeviceStatus(dev) {
           .eq('device_id', deviceId)
           .eq('admin_pin', pin);
         if (error || !data || data.length === 0) {
-          alert("❌ 密码错误，您无权确认此设备入库！");
+          showToast("密码错误，您无权确认此设备入库！", 'error');
           return;
         }
         localStorage.setItem('vd_admin_pin', pin);
@@ -1419,13 +1710,12 @@ function getDeviceStatus(dev) {
           .eq('device_id', deviceId);
         if (devError) throw devError;
 
-        await supabaseClient
-          .from('borrow_logs')
-          .insert({
-            device_id: deviceId,
-            borrower_name: borrower,
-            action_type: 'return'
-          });
+        await writeLog({
+          device_id: deviceId,
+          borrower_name: borrower || targetBorrower || '未知',
+          action_type: 'return',
+          remark: '管理员确认入库'
+        });
 
         if (devInfo && devInfo.is_system) {
           // 🌟 关键：只把"借用人是同一个人"的子设备入库，别人借的绝不能动
@@ -1442,7 +1732,7 @@ function getDeviceStatus(dev) {
           if (subError) throw subError;
         }
 
-        alert("🎉 确认成功！设备已安全归还并入库。");
+        showToast("确认成功！设备已安全归还并入库。", 'success');
 
         if (!document.getElementById('view-admin').classList.contains('hidden')) {
           loadAdminRequests();
@@ -1456,28 +1746,36 @@ function getDeviceStatus(dev) {
         }
         loadRecentLogs();
       } catch (err) {
-        alert("确认入库失败: " + err.message);
+        showToast("确认入库失败: " + err.message, 'error');
       }
     }
 
     // ================= 数据一键导出（备份）逻辑 - Excel 版 =================
     async function exportTableData(tableName) {
       if (!supabaseClient) {
-        alert("数据库未连接就绪！");
+        showToast("数据库未连接就绪！", 'error');
         return;
       }
       if (typeof XLSX === 'undefined') {
-        alert("Excel 导出库未加载成功，请刷新网页后重试！");
+        showToast("Excel 导出库未加载成功，请刷新网页后重试！", 'error');
         return;
       }
       try {
-        const { data, error } = await supabaseClient.from(tableName).select('*');
+        const { data: rawData, error } = await supabaseClient.from(tableName).select('*');
         if (error) throw error;
 
-        if (!data || data.length === 0) {
-          alert(`表 [${tableName}] 中暂无数据可导出。`);
+        if (!rawData || rawData.length === 0) {
+          showToast(`表 [${tableName}] 中暂无数据可导出。`, 'warn');
           return;
         }
+
+        // 🔒 安全：导出前剔除敏感字段（如管理员密码），避免随 Excel 外泄
+        const SENSITIVE = ['admin_pin', 'password', 'pin'];
+        const data = rawData.map(row => {
+          const clone = { ...row };
+          SENSITIVE.forEach(k => { delete clone[k]; });
+          return clone;
+        });
 
         // 1. 将 JSON 数组转换为工作表
         const worksheet = XLSX.utils.json_to_sheet(data);
@@ -1502,9 +1800,252 @@ function getDeviceStatus(dev) {
         const dateStr = new Date().toISOString().split('T')[0];
         XLSX.writeFile(workbook, `VD_Backup_${tableName}_${dateStr}.xlsx`);
 
-        alert(`🎉 Excel 备份文件 [${sheetName}] 导出成功！请将其手动拖入公司网盘。`);
+        showToast(`Excel 备份 [${sheetName}] 导出成功！请手动拖入公司网盘。`, 'success', 3500);
       } catch (err) {
-        alert("备份导出失败: " + err.message);
+        showToast("备份导出失败: " + err.message, 'error');
+      }
+    }
+
+    // ================= 🌟 首页超期提醒 =================
+    async function loadOverdueAlerts() {
+      const card = document.getElementById('overdue-card');
+      const list = document.getElementById('overdue-list');
+      const badge = document.getElementById('overdue-count-badge');
+      if (!card || !supabaseClient) return;
+      try {
+        // 拉取所有有预计归还日期且仍在借出/待确认的设备
+        const { data, error } = await supabaseClient
+          .from('devices')
+          .select('*')
+          .not('expected_return_date', 'is', null)
+          .in('status', ['已借出', '待确认归还', '可用', '库房中']);
+        if (error) throw error;
+
+        const overdue = (data || [])
+          .map(d => ({ dev: d, days: getOverdueDays(d) }))
+          .filter(x => x.days !== null)
+          .sort((a, b) => b.days - a.days);
+
+        if (overdue.length === 0) {
+          card.classList.add('hidden');
+          return;
+        }
+
+        card.classList.remove('hidden');
+        badge.textContent = overdue.length;
+        list.innerHTML = overdue.map(({ dev, days }) => {
+          const sysTag = dev.is_system ? `<span class="bg-blue-100 text-blue-800 text-[9px] font-extrabold px-1.5 py-0.5 rounded ml-1">🌌 系统</span>` : '';
+          return `
+            <div onclick="showDetail('${dev.device_id}')" class="p-3 bg-rose-50 rounded-xl border border-rose-100 text-xs cursor-pointer hover:bg-rose-100 transition active:scale-[0.98]">
+              <div class="flex justify-between items-start gap-2">
+                <h4 class="font-bold text-slate-800 flex items-center gap-1">${dev.name} ${sysTag}</h4>
+                <span class="px-2 py-0.5 text-[9px] font-extrabold border rounded-full bg-rose-600 text-white whitespace-nowrap">超期 ${days} 天</span>
+              </div>
+              <p class="text-[11px] text-slate-600 mt-1">👤 借用人: <span class="font-bold text-rose-600">${dev.current_borrower || '未知'}</span> · 🛠️ ${dev.owner || '暂无'}</p>
+              <p class="text-[10px] text-slate-400 mt-0.5">📅 预计归还: ${dev.expected_return_date}</p>
+            </div>`;
+        }).join('');
+      } catch (err) {
+        console.warn('加载超期提醒失败:', err.message);
+        card.classList.add('hidden');
+      }
+    }
+
+    // ================= 🌟 统计报表逻辑 =================
+    function openStatsPanel() {
+      document.getElementById('view-home').classList.add('hidden');
+      document.getElementById('view-scanner').classList.add('hidden');
+      document.getElementById('view-detail').classList.add('hidden');
+      document.getElementById('view-admin').classList.add('hidden');
+      document.getElementById('view-stats').classList.remove('hidden');
+      stopScanner();
+      loadStatsReport();
+    }
+
+    function msToHuman(ms) {
+      if (ms == null || isNaN(ms) || ms < 0) return '-';
+      const days = Math.floor(ms / 86400000);
+      const hours = Math.floor((ms % 86400000) / 3600000);
+      if (days > 0) return `${days}天${hours}小时`;
+      const mins = Math.floor((ms % 3600000) / 60000);
+      return hours > 0 ? `${hours}小时${mins}分` : `${mins}分钟`;
+    }
+
+    async function loadStatsReport() {
+      const overviewEl = document.getElementById('stats-overview');
+      const hotEl = document.getElementById('stats-hot-devices');
+      const topEl = document.getElementById('stats-top-borrowers');
+      overviewEl.innerHTML = `<p class="col-span-2 text-slate-400 text-center py-4 text-sm">正在统计数据...</p>`;
+      hotEl.innerHTML = ''; topEl.innerHTML = '';
+
+      try {
+        const [devRes, logRes] = await Promise.all([
+          supabaseClient.from('devices').select('*'),
+          supabaseClient.from('borrow_logs').select('*').order('action_time', { ascending: true })
+        ]);
+        if (devRes.error) throw devRes.error;
+        if (logRes.error) throw logRes.error;
+
+        const devices = devRes.data || [];
+        const logs = logRes.data || [];
+
+        // 设备名映射
+        const nameMap = {};
+        devices.forEach(d => { nameMap[d.device_id] = d.name; });
+
+        // ---- 概览卡片 ----
+        const total = devices.length;
+        const inStock = devices.filter(d => getDeviceStatus(d) === '库房中').length;
+        const borrowed = devices.filter(d => getDeviceStatus(d) === '已借出').length;
+        const pending = devices.filter(d => getDeviceStatus(d) === '待确认归还').length;
+        const damaged = devices.filter(d => getDeviceStatus(d) === '已坏').length;
+        const overdueNum = devices.filter(d => getOverdueDays(d) !== null).length;
+        const borrowCount = logs.filter(l => l.action_type === 'borrow').length;
+
+        const cards = [
+          { label: '设备总数', value: total, color: 'text-slate-700', bg: 'bg-slate-50' },
+          { label: '在库可借', value: inStock, color: 'text-emerald-600', bg: 'bg-emerald-50' },
+          { label: '借出中', value: borrowed, color: 'text-rose-600', bg: 'bg-rose-50' },
+          { label: '待确认归还', value: pending, color: 'text-amber-600', bg: 'bg-amber-50' },
+          { label: '⏰ 超期未还', value: overdueNum, color: 'text-rose-600', bg: 'bg-rose-50' },
+          { label: '已坏', value: damaged, color: 'text-slate-500', bg: 'bg-slate-50' },
+          { label: '累计借出次数', value: borrowCount, color: 'text-blue-600', bg: 'bg-blue-50' },
+        ];
+        overviewEl.innerHTML = cards.map(c => `
+          <div class="${c.bg} rounded-xl p-3 text-center border border-slate-100">
+            <p class="text-2xl font-black ${c.color}">${c.value}</p>
+            <p class="text-[11px] text-slate-400 mt-1">${c.label}</p>
+          </div>`).join('');
+
+        // ---- 设备借用热度 TOP 10 ----
+        const deviceBorrowCount = {};
+        logs.filter(l => l.action_type === 'borrow').forEach(l => {
+          deviceBorrowCount[l.device_id] = (deviceBorrowCount[l.device_id] || 0) + 1;
+        });
+        const hotSorted = Object.entries(deviceBorrowCount).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        if (hotSorted.length === 0) {
+          hotEl.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">暂无借用记录</p>`;
+        } else {
+          const max = hotSorted[0][1];
+          hotEl.innerHTML = hotSorted.map(([id, cnt], i) => `
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-5 text-center font-bold ${i < 3 ? 'text-rose-500' : 'text-slate-400'}">${i + 1}</span>
+              <div class="flex-grow">
+                <div class="flex justify-between mb-0.5">
+                  <span class="font-medium text-slate-700 truncate">${nameMap[id] || id}</span>
+                  <span class="text-slate-400 font-bold">${cnt} 次</span>
+                </div>
+                <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="h-full bg-blue-500 rounded-full" style="width:${(cnt / max * 100).toFixed(0)}%"></div>
+                </div>
+              </div>
+            </div>`).join('');
+        }
+
+        // ---- 借用人活跃 TOP 10 + 平均时长 ----
+        const borrowerCount = {};
+        logs.filter(l => l.action_type === 'borrow').forEach(l => {
+          const n = l.borrower_name || '未知';
+          borrowerCount[n] = (borrowerCount[n] || 0) + 1;
+        });
+        const topSorted = Object.entries(borrowerCount).sort((a, b) => b[1] - a[1]).slice(0, 10);
+        if (topSorted.length === 0) {
+          topEl.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">暂无借用记录</p>`;
+        } else {
+          const max = topSorted[0][1];
+          topEl.innerHTML = topSorted.map(([name, cnt], i) => `
+            <div class="flex items-center gap-2 text-xs">
+              <span class="w-5 text-center font-bold ${i < 3 ? 'text-amber-500' : 'text-slate-400'}">${i + 1}</span>
+              <div class="flex-grow">
+                <div class="flex justify-between mb-0.5">
+                  <span class="font-medium text-slate-700 truncate">${name}</span>
+                  <span class="text-slate-400 font-bold">${cnt} 次</span>
+                </div>
+                <div class="h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                  <div class="h-full bg-amber-500 rounded-full" style="width:${(cnt / max * 100).toFixed(0)}%"></div>
+                </div>
+              </div>
+            </div>`).join('');
+        }
+      } catch (err) {
+        overviewEl.innerHTML = `<p class="col-span-2 text-rose-500 text-center py-4 text-xs">统计失败: ${err.message}</p>`;
+      }
+    }
+
+    // 单台设备完整借用历史（含借用时长计算）
+    async function loadDeviceHistory() {
+      const q = document.getElementById('stats-history-input').value.trim();
+      const listEl = document.getElementById('stats-history-list');
+      if (!q) { showToast('请输入设备ID或名称关键词', 'warn'); return; }
+      listEl.innerHTML = `<p class="text-slate-400 text-center py-4 text-xs">正在检索历史...</p>`;
+
+      try {
+        // 先按 ID/名称定位设备
+        const { data: devs, error: devErr } = await supabaseClient
+          .from('devices').select('device_id, name')
+          .or(`device_id.ilike.%${q}%,name.ilike.%${q}%`);
+        if (devErr) throw devErr;
+        if (!devs || devs.length === 0) {
+          listEl.innerHTML = `<p class="text-slate-400 text-center py-6 text-xs">🔍 未找到匹配设备</p>`;
+          return;
+        }
+        const ids = devs.map(d => d.device_id);
+        const nameMap = {};
+        devs.forEach(d => { nameMap[d.device_id] = d.name; });
+
+        const { data: logs, error: logErr } = await supabaseClient
+          .from('borrow_logs').select('*').in('device_id', ids)
+          .order('action_time', { ascending: false });
+        if (logErr) throw logErr;
+
+        if (!logs || logs.length === 0) {
+          listEl.innerHTML = `<p class="text-slate-400 text-center py-6 text-xs">该设备暂无借还历史记录</p>`;
+          return;
+        }
+
+        // 计算借用时长：对每台设备，按时间正序配对 borrow→return
+        const byDevice = {};
+        logs.forEach(l => { (byDevice[l.device_id] = byDevice[l.device_id] || []).push(l); });
+        const durationMap = {}; // logId -> ms（记在 return 日志上）
+        Object.values(byDevice).forEach(arr => {
+          const asc = [...arr].sort((a, b) => new Date(a.action_time) - new Date(b.action_time));
+          let lastBorrow = null;
+          asc.forEach(l => {
+            if (l.action_type === 'borrow') lastBorrow = l;
+            else if (l.action_type === 'return' && lastBorrow) {
+              durationMap[l.id != null ? l.id : l.action_time] = new Date(l.action_time) - new Date(lastBorrow.action_time);
+              lastBorrow = null;
+            }
+          });
+        });
+
+        const typeLabel = {
+          borrow: { t: '借出', c: 'bg-emerald-100 text-emerald-700' },
+          return: { t: '归还入库', c: 'bg-blue-100 text-blue-700' },
+          return_request: { t: '申请归还', c: 'bg-amber-100 text-amber-700' },
+          edit: { t: '编辑信息', c: 'bg-slate-200 text-slate-600' }
+        };
+
+        listEl.innerHTML = logs.map(l => {
+          const meta = typeLabel[l.action_type] || { t: l.action_type, c: 'bg-slate-100 text-slate-600' };
+          const timeStr = new Date(l.action_time).toLocaleString('zh-CN');
+          const durKey = l.id != null ? l.id : l.action_time;
+          const durStr = (l.action_type === 'return' && durationMap[durKey] != null)
+            ? `<span class="text-[10px] text-slate-400">· 借用时长 ${msToHuman(durationMap[durKey])}</span>` : '';
+          const remarkStr = l.remark ? `<p class="text-[10px] text-slate-400 mt-0.5">📝 ${l.remark}</p>` : '';
+          return `
+            <div class="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs">
+              <div class="flex justify-between items-center gap-2">
+                <span class="font-bold text-slate-700">${nameMap[l.device_id] || l.device_id}</span>
+                <span class="px-2 py-0.5 text-[9px] font-bold rounded-full ${meta.c}">${meta.t}</span>
+              </div>
+              <p class="text-[11px] text-slate-500 mt-1">👤 ${l.borrower_name || '-'} ${durStr}</p>
+              <p class="text-[10px] text-slate-400">⏰ ${timeStr} · ID: ${l.device_id}</p>
+              ${remarkStr}
+            </div>`;
+        }).join('');
+      } catch (err) {
+        listEl.innerHTML = `<p class="text-rose-500 text-center py-4 text-xs">查询失败: ${err.message}</p>`;
       }
     }
 
